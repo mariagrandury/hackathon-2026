@@ -1,0 +1,4 @@
+gradio==4.44.1
+datasets>=2.20.0
+huggingface_hub>=0.24.0
+pandas>=2.1.0
