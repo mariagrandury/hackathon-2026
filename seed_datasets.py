@@ -1,7 +1,8 @@
 """One-shot seeding script for the hackathon datasets.
 
 Creates (or overwrites) two private datasets on the Hub with dummy rows so the
-Space has something to read on first launch.
+Space has something to read on first launch. Re-run this whenever the schema
+in ``data.py`` changes.
 
 Usage:
     HF_TOKEN=hf_... python seed_datasets.py
@@ -11,40 +12,15 @@ from __future__ import annotations
 
 import os
 
-from datasets import Dataset, Features, Value
+from datasets import Dataset
 
-PARTICIPANTS_REPO = "mariagrandury/hackathon_participants"
-PROMPTS_REPO = "mariagrandury/cultural_preferences"
-
-
-PARTICIPANTS_FEATURES = Features(
-    {
-        "username": Value("string"),
-        "language": Value("string"),
-        "country": Value("string"),
-        "gmail": Value("string"),
-    }
-)
-
-VALIDATION_STRUCT = {
-    "validated": Value("bool"),
-    "username": Value("string"),
-}
-
-PROMPTS_FEATURES = Features(
-    {
-        "username": Value("string"),
-        "language": Value("string"),
-        "country": Value("string"),
-        "prompt": Value("string"),
-        "prompt_validation_1": VALIDATION_STRUCT,
-        "prompt_validation_2": VALIDATION_STRUCT,
-        "prompt_validation_3": VALIDATION_STRUCT,
-        "answer_a": Value("string"),
-        "model_a": Value("string"),
-        "answer_b": Value("string"),
-        "model_b": Value("string"),
-    }
+from data import (
+    EMPTY_VALIDATION,
+    EMPTY_VOTE,
+    PARTICIPANTS_FEATURES,
+    PARTICIPANTS_REPO,
+    PROMPTS_FEATURES,
+    PROMPTS_REPO,
 )
 
 
@@ -88,49 +64,92 @@ DUMMY_PARTICIPANTS = [
 ]
 
 
-def _empty_validation() -> dict:
-    return {"validated": False, "username": ""}
+def _validation(username: str, validated: bool = True) -> dict:
+    return {"validated": validated, "username": username}
 
 
+def _vote(username: str, choice: str) -> dict:
+    return {"choice": choice, "username": username}
+
+
+# Mix of unvalidated, partially validated, and fully-validated prompts so that
+# every tab in the app has something to display on first launch.
 DUMMY_PROMPTS = [
     {
         "username": "mariagrandury",
         "language": "es",
         "country": "es",
         "prompt": "¿Qué se suele cenar en Nochevieja en España?",
-        "prompt_validation_1": _empty_validation(),
-        "prompt_validation_2": _empty_validation(),
-        "prompt_validation_3": _empty_validation(),
+        "prompt_validation_1": dict(EMPTY_VALIDATION),
+        "prompt_validation_2": dict(EMPTY_VALIDATION),
+        "prompt_validation_3": dict(EMPTY_VALIDATION),
         "answer_a": "",
         "model_a": "",
         "answer_b": "",
         "model_b": "",
-    },
-    {
-        "username": "bruno-br",
-        "language": "pt",
-        "country": "br",
-        "prompt": "Qual é o prato típico do São João no Nordeste do Brasil?",
-        "prompt_validation_1": _empty_validation(),
-        "prompt_validation_2": _empty_validation(),
-        "prompt_validation_3": _empty_validation(),
-        "answer_a": "",
-        "model_a": "",
-        "answer_b": "",
-        "model_b": "",
+        "answer_chosen_1": dict(EMPTY_VOTE),
+        "answer_chosen_2": dict(EMPTY_VOTE),
+        "answer_chosen_3": dict(EMPTY_VOTE),
     },
     {
         "username": "alice-cl",
         "language": "es",
         "country": "cl",
         "prompt": "¿Cuál es la diferencia entre 'once' y 'cena' en Chile?",
-        "prompt_validation_1": _empty_validation(),
-        "prompt_validation_2": _empty_validation(),
-        "prompt_validation_3": _empty_validation(),
+        "prompt_validation_1": _validation("bruno-br", validated=True),
+        "prompt_validation_2": dict(EMPTY_VALIDATION),
+        "prompt_validation_3": dict(EMPTY_VALIDATION),
         "answer_a": "",
         "model_a": "",
         "answer_b": "",
         "model_b": "",
+        "answer_chosen_1": dict(EMPTY_VOTE),
+        "answer_chosen_2": dict(EMPTY_VOTE),
+        "answer_chosen_3": dict(EMPTY_VOTE),
+    },
+    {
+        "username": "bruno-br",
+        "language": "pt",
+        "country": "br",
+        "prompt": "Qual é o prato típico do São João no Nordeste do Brasil?",
+        "prompt_validation_1": _validation("alice-cl", validated=True),
+        "prompt_validation_2": _validation("carla-co", validated=True),
+        "prompt_validation_3": _validation("diogo-pt", validated=True),
+        "answer_a": (
+            "No Nordeste, o São João é celebrado com canjica, pamonha, "
+            "bolo de milho e quentão."
+        ),
+        "model_a": "qwen/qwen3.5",
+        "answer_b": (
+            "O prato típico mais associado ao São João é a paçoca de "
+            "amendoim, embora também haja milho cozido."
+        ),
+        "model_b": "meta-llama/llama-3.1-70b",
+        "answer_chosen_1": _vote("alice-cl", "a"),
+        "answer_chosen_2": dict(EMPTY_VOTE),
+        "answer_chosen_3": dict(EMPTY_VOTE),
+    },
+    {
+        "username": "carla-co",
+        "language": "es",
+        "country": "co",
+        "prompt": "¿Qué se come tradicionalmente en una novena de Navidad en Colombia?",
+        "prompt_validation_1": _validation("mariagrandury", validated=True),
+        "prompt_validation_2": _validation("bruno-br", validated=True),
+        "prompt_validation_3": _validation("diogo-pt", validated=True),
+        "answer_a": (
+            "Buñuelos, natilla y manjar blanco son los infaltables; "
+            "se acompañan con chocolate caliente."
+        ),
+        "model_a": "qwen/qwen3.5",
+        "answer_b": (
+            "Lo más común es comer pan de yuca y arepas, junto con "
+            "una taza de café tinto."
+        ),
+        "model_b": "meta-llama/llama-3.1-70b",
+        "answer_chosen_1": dict(EMPTY_VOTE),
+        "answer_chosen_2": dict(EMPTY_VOTE),
+        "answer_chosen_3": dict(EMPTY_VOTE),
     },
 ]
 
