@@ -84,3 +84,90 @@ def has_answers(row) -> bool:
     return bool(str(row.get("answer_a", "")).strip()) and bool(
         str(row.get("answer_b", "")).strip()
     )
+
+
+def user_stats(username: str, df: pd.DataFrame) -> dict:
+    """Counts of prompts written, validations recorded, and votes recorded
+    by ``username``."""
+    if not username or df.empty:
+        return {"sent": 0, "validated": 0, "voted": 0}
+    sent = int((df["username"] == username).sum())
+    validated = int(
+        sum(
+            df[f"prompt_validation_{i}"]
+            .apply(lambda v: v["username"] == username)
+            .sum()
+            for i in (1, 2, 3)
+        )
+    )
+    voted = int(
+        sum(
+            df[f"answer_chosen_{i}"]
+            .apply(lambda v: v["username"] == username)
+            .sum()
+            for i in (1, 2, 3)
+        )
+    )
+    return {"sent": sent, "validated": validated, "voted": voted}
+
+
+def all_known_usernames(df: pd.DataFrame) -> list[str]:
+    """Every username that has authored, validated, or voted on a prompt."""
+    if df.empty:
+        return []
+    names: set[str] = set(df["username"].dropna().astype(str))
+    for col in (
+        "prompt_validation_1",
+        "prompt_validation_2",
+        "prompt_validation_3",
+        "answer_chosen_1",
+        "answer_chosen_2",
+        "answer_chosen_3",
+    ):
+        names.update(u for u in df[col].apply(lambda v: v["username"]) if u)
+    return sorted(n for n in names if n)
+
+
+def country_counts(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-country: ``fully_validated`` and ``pending`` (sent but not yet
+    fully validated). Sums to total prompts sent."""
+    if df.empty:
+        return pd.DataFrame(columns=["country", "fully_validated", "pending"])
+    rows = []
+    for country in sorted(df["country"].dropna().unique()):
+        sub = df[df["country"] == country]
+        fully = int(sub.apply(is_fully_validated, axis=1).sum())
+        rows.append(
+            {
+                "country": country,
+                "fully_validated": fully,
+                "pending": len(sub) - fully,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def ranking_df(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per known user with their three counts, sorted by prompts sent."""
+    columns = ["username", "prompts sent", "prompts validated", "answers voted"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    rows = []
+    for username in all_known_usernames(df):
+        s = user_stats(username, df)
+        rows.append(
+            {
+                "username": username,
+                "prompts sent": s["sent"],
+                "prompts validated": s["validated"],
+                "answers voted": s["voted"],
+            }
+        )
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .sort_values(
+            ["prompts sent", "prompts validated", "answers voted"],
+            ascending=False,
+        )
+        .reset_index(drop=True)
+    )

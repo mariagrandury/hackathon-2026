@@ -7,6 +7,8 @@ Tabs:
     a row written by someone else.
   * Answer Voting — for fully-validated prompts, lets the user vote on the
     better of two model answers (or flag both/none) into ``answer_chosen_i``.
+  * Leaderboard — per-user progress (against a goal), full ranking, and a
+    per-country split of validated vs pending prompts.
 
 Authentication relies on Hugging Face OAuth (``hf_oauth: true`` in
 ``README.md``); the logged-in user's HF username is used as ``username``.
@@ -14,21 +16,30 @@ Authentication relies on Hugging Face OAuth (``hf_oauth: true`` in
 
 from __future__ import annotations
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 import gradio as gr
 import pandas as pd
 
 from data import (
     EMPTY_VALIDATION,
     EMPTY_VOTE,
+    country_counts,
     has_answers,
     is_fully_validated,
     load_prompts_df,
     participant_info,
     push_prompts_df,
+    ranking_df,
+    user_stats,
 )
 
 GUIDELINES_PATH = "guidelines.md"
 VOTE_CHOICES = ("a", "b", "both", "none")
+LEADERBOARD_GOAL = 100
 
 
 def _read_guidelines() -> str:
@@ -302,6 +313,99 @@ def _build_voting_tab() -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Leaderboard
+# ---------------------------------------------------------------------------
+
+
+def _user_progress_plot(stats: dict, goal: int = LEADERBOARD_GOAL):
+    fig, ax = plt.subplots(figsize=(7, 2.6))
+    metrics = ["Prompts sent", "Prompts validated", "Answers voted"]
+    values = [stats["sent"], stats["validated"], stats["voted"]]
+    ax.barh(metrics, values, color=["#3b82f6", "#10b981", "#f59e0b"])
+    ax.set_xlim(0, max(goal + 10, max(values, default=0) + 5))
+    ax.axvline(
+        goal, linestyle="--", color="gray", alpha=0.6, label=f"Goal: {goal}"
+    )
+    for i, v in enumerate(values):
+        ax.text(v + 1, i, str(v), va="center", fontsize=9)
+    ax.legend(loc="lower right")
+    ax.set_xlabel("Count")
+    fig.tight_layout()
+    return fig
+
+
+def _country_plot(df: pd.DataFrame):
+    counts = country_counts(df)
+    fig, ax = plt.subplots(figsize=(7, 3.6))
+    if counts.empty:
+        ax.text(
+            0.5,
+            0.5,
+            "No prompts yet",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        ax.set_axis_off()
+        return fig
+    countries = counts["country"].tolist()
+    fully = counts["fully_validated"].tolist()
+    pending = counts["pending"].tolist()
+    ax.bar(countries, fully, color="#22c55e", label="Fully validated")
+    ax.bar(
+        countries,
+        pending,
+        bottom=fully,
+        color="#facc15",
+        label="Pending validation",
+    )
+    for i, (f, p) in enumerate(zip(fully, pending)):
+        if f:
+            ax.text(i, f / 2, str(f), ha="center", va="center", fontsize=9)
+        if p:
+            ax.text(
+                i,
+                f + p / 2,
+                str(p),
+                ha="center",
+                va="center",
+                fontsize=9,
+            )
+    ax.set_ylabel("Prompts")
+    ax.set_xlabel("Country")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+def refresh_leaderboard(profile: gr.OAuthProfile | None):
+    """Return ``(user_plot, ranking_df, country_plot)`` for the leaderboard tab."""
+    df = load_prompts_df()
+    username = profile.username if profile else ""
+    return (
+        _user_progress_plot(user_stats(username, df)),
+        ranking_df(df),
+        _country_plot(df),
+    )
+
+
+def _build_leaderboard_tab() -> list:
+    refresh_btn = gr.Button("Refresh", variant="secondary")
+    user_plot = gr.Plot(label=f"Your progress (goal = {LEADERBOARD_GOAL})")
+    ranking = gr.Dataframe(
+        label="Ranking — by prompts sent",
+        interactive=False,
+        wrap=True,
+    )
+    country_plot = gr.Plot(
+        label="Prompts by country: validated (green) vs pending (yellow)"
+    )
+    outputs = [user_plot, ranking, country_plot]
+    refresh_btn.click(refresh_leaderboard, inputs=None, outputs=outputs)
+    return outputs
+
+
 def build_demo() -> gr.Blocks:
     with gr.Blocks(title="Hackathon 2026") as demo:
         gr.Markdown("# Hackathon 2026 — Cultural Preferences")
@@ -310,6 +414,7 @@ def build_demo() -> gr.Blocks:
             gr.LoginButton()
             user_md = gr.Markdown("Not logged in.")
 
+        leaderboard_outputs: list = []
         with gr.Tabs():
             with gr.Tab("Annotation Guidelines"):
                 gr.Markdown(_read_guidelines())
@@ -319,8 +424,13 @@ def build_demo() -> gr.Blocks:
                 _build_validation_tab()
             with gr.Tab("Answer Voting"):
                 _build_voting_tab()
+            with gr.Tab("Leaderboard"):
+                leaderboard_outputs = _build_leaderboard_tab()
 
         demo.load(show_user, inputs=None, outputs=user_md)
+        demo.load(
+            refresh_leaderboard, inputs=None, outputs=leaderboard_outputs
+        )
     return demo
 
 
