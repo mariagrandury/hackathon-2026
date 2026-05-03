@@ -83,9 +83,11 @@ pip install -r requirements.txt
 
 # 4. Authenticate to Hugging Face — needed for both dataset I/O *and*
 #    Gradio's local OAuth mock (which calls whoami() to get a fake profile).
-huggingface-cli login
-# or: export HF_TOKEN=hf_...
-# The token must have read+write on both private datasets above.
+#    Easiest: copy .env.example to .env and paste a token with read+write
+#    on both private datasets above. data.py loads .env on import.
+cp .env.example .env
+$EDITOR .env
+# Alternatives: huggingface-cli login   |   export HF_TOKEN=hf_...
 
 # 5. Seed the dummy datasets (one-time, or after schema changes in data.py).
 #    DESTRUCTIVE: this overwrites the datasets, dropping any rows users have

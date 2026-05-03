@@ -1,7 +1,9 @@
 """Hugging Face dataset I/O for the hackathon Space.
 
 Both the participants and the cultural-preferences datasets are private; the
-calling environment must expose ``HF_TOKEN`` (Space secret or local export).
+calling environment must expose ``HF_TOKEN``. On a Hugging Face Space this is
+configured as a secret. Locally, drop a ``.env`` file at the repo root with
+``HF_TOKEN=hf_...`` and ``python-dotenv`` will load it on import.
 """
 
 from __future__ import annotations
@@ -11,10 +13,12 @@ from typing import Optional
 
 import pandas as pd
 from datasets import Dataset, Features, Value, load_dataset
+from dotenv import load_dotenv
 
 PARTICIPANTS_REPO = "mariagrandury/hackathon_participants"
 PROMPTS_REPO = "mariagrandury/cultural_preferences"
 
+load_dotenv()
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
 EMPTY_VALIDATION = {"validated": False, "username": ""}
