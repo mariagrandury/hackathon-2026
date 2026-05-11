@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"stack\\\\|BarPlot\\\\|class.*Plot\" /opt/homebrew/lib/python3.11/site-packages/gradio/components/native_plot.py | head -60)",
+      "Read(//opt/homebrew/lib/python3.11/site-packages/gradio/components/**)",
+      "Bash(python -c \"import app; demo = app.build_demo\\(\\); print\\('build_demo OK, blocks:', len\\(demo.blocks\\)\\)\")",
+      "Bash(python app.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:7860/)",
+      "Bash(python -c \"import app; demo = app.build_demo\\(\\); print\\('OK'\\)\")",
+      "Read(//opt/homebrew/lib/python3.11/site-packages/gradio/layouts/**)",
+      "Bash(tee /tmp/gradio.log)"
+    ]
+  }
+}

@@ -14,7 +14,9 @@ answers. All state lives in two private datasets on the Hub.
 - **`app.py`** — Gradio Blocks UI. Five tabs: Annotation Guidelines, Prompt
   Writing, Prompt Validation, Answer Voting, Leaderboard. Auth uses HF OAuth
   (`hf_oauth: true` in `README.md`); the logged-in HF username is the canonical
-  identity used for every write.
+  identity used for every write. The Leaderboard tab is lazy: its
+  `cultural_preferences` read + plot rebuild only fires on `tab.select`, not
+  on `demo.load`, so page-loads don't pay the leaderboard cost.
 - **`data.py`** — pure data layer. Schemas (`PARTICIPANTS_FEATURES`,
   `PROMPTS_FEATURES`), I/O (`load_/push_prompts_df`, `participant_info`), row
   predicates (`is_fully_validated`, `has_answers`), and aggregations for the
@@ -25,7 +27,8 @@ answers. All state lives in two private datasets on the Hub.
   first tab.
 - **`requirements.txt`** — pins `gradio[oauth]==4.44.1`,
   `huggingface_hub<1.0` (Gradio 4.44 still imports the removed `HfFolder`),
-  `datasets<4.0`, `pandas`, `matplotlib`.
+  `datasets<4.0`, `pandas`. Leaderboard plots use Gradio's native `BarPlot`,
+  not matplotlib.
 
 ### Datasets
 
@@ -139,8 +142,17 @@ inside the Space because `hf_oauth: true` is set.
   `{choice: "", username: ""}` are sentinels for "no one filled this yet".
   Don't use truthiness on `validated`/`choice` alone — always check
   `username`.
-- **Leaderboard reads the whole dataset on every page load.** Fine for a few
+- **Leaderboard reads the whole dataset on every tab open.** The lazy-load
+  on `tab.select` keeps it off page-load, but each open of the Leaderboard
+  tab still pulls the full `cultural_preferences` table. Fine for a few
   thousand prompts; plan to cache or paginate if the dataset grows.
+- **`gr.BarPlot` needs an initial value matching its `x`/`y`/`color`
+  columns.** Constructing a BarPlot with `x="count"`/`y="metric"` but no
+  `value` produces a Vega-Lite spec referring to non-existent columns; the
+  client renderer throws and the whole page freezes (initial render only —
+  server-side handlers still work). Pass an empty-but-correctly-shaped
+  DataFrame as `value` at construction; `refresh_leaderboard` replaces it on
+  tab open.
 - **Models that produced `answer_a`/`answer_b` are deliberately hidden from
   the voting view** (blind A/B). They stay in the dataset for offline
   analysis.

@@ -26,11 +26,6 @@ from __future__ import annotations
 
 import os
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 import gradio as gr
 import pandas as pd
 
@@ -608,79 +603,54 @@ def _build_voting_tab(language: gr.State) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _user_progress_plot(stats: dict, lang: str, goal: int = LEADERBOARD_GOAL):
+def _user_progress_data(stats: dict, lang: str) -> pd.DataFrame:
+    """Long-form DataFrame for the user progress bar plot."""
     s = _t(lang)
-    fig, ax = plt.subplots(figsize=(7, 2.6))
-    metrics = [
-        s["plot_metric_sent"],
-        s["plot_metric_validated"],
-        s["plot_metric_voted"],
-    ]
-    values = [stats["sent"], stats["validated"], stats["voted"]]
-    ax.barh(metrics, values, color=["#3b82f6", "#10b981", "#f59e0b"])
-    ax.set_xlim(0, max(goal + 10, max(values, default=0) + 5))
-    ax.axvline(
-        goal,
-        linestyle="--",
-        color="gray",
-        alpha=0.6,
-        label=s["plot_goal_legend"].format(goal=goal),
+    return pd.DataFrame(
+        {
+            "metric": [
+                s["plot_metric_sent"],
+                s["plot_metric_validated"],
+                s["plot_metric_voted"],
+            ],
+            "count": [stats["sent"], stats["validated"], stats["voted"]],
+        }
     )
-    for i, v in enumerate(values):
-        ax.text(v + 1, i, str(v), va="center", fontsize=9)
-    ax.legend(loc="lower right")
-    ax.set_xlabel(s["plot_xlabel_count"])
-    fig.tight_layout()
-    return fig
 
 
-def _country_plot(df: pd.DataFrame, lang: str):
+def _country_plot_data(df: pd.DataFrame, lang: str) -> pd.DataFrame:
+    """Long-form DataFrame for the stacked country bar plot.
+
+    One row per (country, status) so ``gr.BarPlot(color="status")`` stacks
+    fully-validated on top of pending."""
     s = _t(lang)
     counts = country_counts(df)
-    fig, ax = plt.subplots(figsize=(7, 3.6))
     if counts.empty:
-        ax.text(
-            0.5,
-            0.5,
-            s["plot_country_no_prompts"],
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-        ax.set_axis_off()
-        return fig
-    countries = counts["country"].tolist()
-    fully = counts["fully_validated"].tolist()
-    pending = counts["pending"].tolist()
-    ax.bar(countries, fully, color="#22c55e", label=s["plot_country_fully"])
-    ax.bar(
-        countries,
-        pending,
-        bottom=fully,
-        color="#facc15",
-        label=s["plot_country_pending"],
+        return pd.DataFrame(columns=["country", "status", "count"])
+    fully = pd.DataFrame(
+        {
+            "country": counts["country"],
+            "status": s["plot_country_fully"],
+            "count": counts["fully_validated"].astype(int),
+        }
     )
-    for i, (f, p) in enumerate(zip(fully, pending)):
-        if f:
-            ax.text(i, f / 2, str(f), ha="center", va="center", fontsize=9)
-        if p:
-            ax.text(
-                i,
-                f + p / 2,
-                str(p),
-                ha="center",
-                va="center",
-                fontsize=9,
-            )
-    ax.set_ylabel(s["plot_country_ylabel"])
-    ax.set_xlabel(s["plot_country_xlabel"])
-    ax.legend(loc="upper right")
-    fig.tight_layout()
-    return fig
+    pending = pd.DataFrame(
+        {
+            "country": counts["country"],
+            "status": s["plot_country_pending"],
+            "count": counts["pending"].astype(int),
+        }
+    )
+    return pd.concat([fully, pending], ignore_index=True)
 
 
 def refresh_leaderboard(lang: str, profile: gr.OAuthProfile | None):
-    """Return ``(user_plot, ranking_df, country_plot)`` for the leaderboard tab."""
+    """Return localized ``(user_plot, ranking, country_plot)`` updates.
+
+    Returns ``gr.update`` payloads (not bare DataFrames) so the BarPlots
+    can pick up the language-dependent ``color_map`` and axis titles in the
+    same render that brings the data in. Doing the localization here, on
+    the lazy tab-open path, also keeps it off the page-load hot path."""
     s = _t(lang)
     df = load_prompts_df()
     username = profile.username if profile else ""
@@ -693,10 +663,36 @@ def refresh_leaderboard(lang: str, profile: gr.OAuthProfile | None):
         }
     )
     return (
-        _user_progress_plot(user_stats(username, df), lang),
-        rdf,
-        _country_plot(df, lang),
+        gr.update(
+            value=_user_progress_data(user_stats(username, df), lang),
+            color_map=_user_progress_color_map(lang),
+            x_title=s["plot_xlabel_count"],
+        ),
+        gr.update(value=rdf),
+        gr.update(
+            value=_country_plot_data(df, lang),
+            color_map=_country_color_map(lang),
+            x_title=s["plot_country_xlabel"],
+            y_title=s["plot_country_ylabel"],
+        ),
     )
+
+
+def _user_progress_color_map(lang: str) -> dict[str, str]:
+    s = _t(lang)
+    return {
+        s["plot_metric_sent"]: "#3b82f6",
+        s["plot_metric_validated"]: "#10b981",
+        s["plot_metric_voted"]: "#f59e0b",
+    }
+
+
+def _country_color_map(lang: str) -> dict[str, str]:
+    s = _t(lang)
+    return {
+        s["plot_country_fully"]: "#22c55e",
+        s["plot_country_pending"]: "#facc15",
+    }
 
 
 def _build_leaderboard_tab(language: gr.State) -> dict:
@@ -704,15 +700,38 @@ def _build_leaderboard_tab(language: gr.State) -> dict:
     refresh_btn = gr.Button(
         s["leaderboard_refresh_button"], variant="secondary"
     )
-    user_plot = gr.Plot(
-        label=s["leaderboard_user_plot_label"].format(goal=LEADERBOARD_GOAL)
+    # Provide an empty DataFrame with the expected columns as initial value.
+    # gr.BarPlot referring to columns that don't exist in ``value`` produces a
+    # malformed Vega-Lite spec that crashes the client-side renderer and
+    # freezes the whole UI — page loads stuck in the static initial render
+    # (English Annotation Guidelines, no working login or tabs).
+    user_plot = gr.BarPlot(
+        value=pd.DataFrame({"metric": [], "count": []}),
+        x="count",
+        y="metric",
+        color="metric",
+        color_map=_user_progress_color_map(DEFAULT_LANG),
+        x_lim=[0, LEADERBOARD_GOAL],
+        x_title=s["plot_xlabel_count"],
+        label=s["leaderboard_user_plot_label"].format(goal=LEADERBOARD_GOAL),
+        height=180,
     )
     ranking = gr.Dataframe(
         label=s["leaderboard_ranking_label"],
         interactive=False,
         wrap=True,
     )
-    country_plot = gr.Plot(label=s["leaderboard_country_plot_label"])
+    country_plot = gr.BarPlot(
+        value=pd.DataFrame({"country": [], "count": [], "status": []}),
+        x="country",
+        y="count",
+        color="status",
+        color_map=_country_color_map(DEFAULT_LANG),
+        x_title=s["plot_country_xlabel"],
+        y_title=s["plot_country_ylabel"],
+        label=s["leaderboard_country_plot_label"],
+        height=320,
+    )
     outputs = [user_plot, ranking, country_plot]
     refresh_btn.click(
         refresh_leaderboard, inputs=[language], outputs=outputs
@@ -746,10 +765,13 @@ def _resolve_language(profile: gr.OAuthProfile | None) -> str:
 def init_ui(profile: gr.OAuthProfile | None):
     """Resolve the user's language and emit one update per translatable
     component. Returned tuple layout matches the ``demo.load`` ``outputs=``
-    list in :func:`build_demo`."""
+    list in :func:`build_demo`.
+
+    The leaderboard's data is *not* computed here — it's loaded lazily when
+    the Leaderboard tab is opened (see ``tab_leaderboard.select``). Init only
+    updates leaderboard labels."""
     lang = _resolve_language(profile)
     s = _t(lang)
-    user_plot, ranking, country_plot = refresh_leaderboard(lang, profile)
     return (
         # Language state (drives every subsequent handler)
         lang,
@@ -791,19 +813,18 @@ def init_ui(profile: gr.OAuthProfile | None):
         gr.update(value=s["voting_b_button"]),
         gr.update(value=s["voting_both_button"]),
         gr.update(value=s["voting_none_button"]),
-        # Leaderboard: button label + plot/dataframe values + their labels
+        # Leaderboard: button + component labels only. Data, axis titles and
+        # color_map are applied by ``refresh_leaderboard`` when the tab is
+        # opened — pushing them here against a value-less BarPlot can crash
+        # the client-side Vega renderer and freeze the whole UI.
         gr.update(value=s["leaderboard_refresh_button"]),
         gr.update(
-            value=user_plot,
             label=s["leaderboard_user_plot_label"].format(
                 goal=LEADERBOARD_GOAL
             ),
         ),
-        gr.update(value=ranking, label=s["leaderboard_ranking_label"]),
-        gr.update(
-            value=country_plot,
-            label=s["leaderboard_country_plot_label"],
-        ),
+        gr.update(label=s["leaderboard_ranking_label"]),
+        gr.update(label=s["leaderboard_country_plot_label"]),
     )
 
 
@@ -837,6 +858,14 @@ def build_demo() -> gr.Blocks:
             tab_leaderboard = gr.Tab(s["tab_leaderboard"])
             with tab_leaderboard:
                 leaderboard = _build_leaderboard_tab(language)
+
+        # Lazy: only hit the prompts dataset + build the leaderboard when the
+        # user actually opens the tab, not on every page load.
+        tab_leaderboard.select(
+            refresh_leaderboard,
+            inputs=[language],
+            outputs=leaderboard["outputs"],
+        )
 
         demo.load(
             init_ui,

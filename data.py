@@ -93,6 +93,35 @@ def has_answers(row) -> bool:
     )
 
 
+VALIDATION_COLS = (
+    "prompt_validation_1",
+    "prompt_validation_2",
+    "prompt_validation_3",
+)
+VOTE_COLS = ("answer_chosen_1", "answer_chosen_2", "answer_chosen_3")
+
+
+def _validator_usernames(df: pd.DataFrame) -> pd.Series:
+    parts = [df[col].str["username"] for col in VALIDATION_COLS]
+    s = pd.concat(parts, ignore_index=True)
+    return s[s != ""]
+
+
+def _voter_usernames(df: pd.DataFrame) -> pd.Series:
+    parts = [df[col].str["username"] for col in VOTE_COLS]
+    s = pd.concat(parts, ignore_index=True)
+    return s[s != ""]
+
+
+def _fully_validated_mask(df: pd.DataFrame) -> pd.Series:
+    """Vectorised equivalent of ``df.apply(is_fully_validated, axis=1)``."""
+    return (
+        (df["prompt_validation_1"].str["choice"] == "relevant")
+        & (df["prompt_validation_2"].str["choice"] == "relevant")
+        & (df["prompt_validation_3"].str["choice"] == "relevant")
+    )
+
+
 def user_stats(username: str, df: pd.DataFrame) -> dict:
     """Counts of prompts written, validations recorded, and votes recorded
     by ``username``."""
@@ -101,18 +130,13 @@ def user_stats(username: str, df: pd.DataFrame) -> dict:
     sent = int((df["username"] == username).sum())
     validated = int(
         sum(
-            df[f"prompt_validation_{i}"]
-            .apply(lambda v: v["username"] == username)
-            .sum()
-            for i in (1, 2, 3)
+            (df[col].str["username"] == username).sum()
+            for col in VALIDATION_COLS
         )
     )
     voted = int(
         sum(
-            df[f"answer_chosen_{i}"]
-            .apply(lambda v: v["username"] == username)
-            .sum()
-            for i in (1, 2, 3)
+            (df[col].str["username"] == username).sum() for col in VOTE_COLS
         )
     )
     return {"sent": sent, "validated": validated, "voted": voted}
@@ -123,15 +147,8 @@ def all_known_usernames(df: pd.DataFrame) -> list[str]:
     if df.empty:
         return []
     names: set[str] = set(df["username"].dropna().astype(str))
-    for col in (
-        "prompt_validation_1",
-        "prompt_validation_2",
-        "prompt_validation_3",
-        "answer_chosen_1",
-        "answer_chosen_2",
-        "answer_chosen_3",
-    ):
-        names.update(u for u in df[col].apply(lambda v: v["username"]) if u)
+    names.update(_validator_usernames(df))
+    names.update(_voter_usernames(df))
     return sorted(n for n in names if n)
 
 
@@ -140,18 +157,17 @@ def country_counts(df: pd.DataFrame) -> pd.DataFrame:
     fully validated). Sums to total prompts sent."""
     if df.empty:
         return pd.DataFrame(columns=["country", "fully_validated", "pending"])
-    rows = []
-    for country in sorted(df["country"].dropna().unique()):
-        sub = df[df["country"] == country]
-        fully = int(sub.apply(is_fully_validated, axis=1).sum())
-        rows.append(
-            {
-                "country": country,
-                "fully_validated": fully,
-                "pending": len(sub) - fully,
-            }
-        )
-    return pd.DataFrame(rows)
+    grouped = (
+        df.assign(_fully=_fully_validated_mask(df))
+        .dropna(subset=["country"])
+        .groupby("country", sort=True)
+        .agg(total=("country", "size"), fully_validated=("_fully", "sum"))
+        .reset_index()
+    )
+    grouped["pending"] = grouped["total"] - grouped["fully_validated"]
+    return grouped[["country", "fully_validated", "pending"]].astype(
+        {"fully_validated": int, "pending": int}
+    )
 
 
 def ranking_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -159,22 +175,20 @@ def ranking_df(df: pd.DataFrame) -> pd.DataFrame:
     columns = ["username", "prompts sent", "prompts validated", "answers voted"]
     if df.empty:
         return pd.DataFrame(columns=columns)
-    rows = []
-    for username in all_known_usernames(df):
-        s = user_stats(username, df)
-        rows.append(
-            {
-                "username": username,
-                "prompts sent": s["sent"],
-                "prompts validated": s["validated"],
-                "answers voted": s["voted"],
-            }
-        )
-    return (
-        pd.DataFrame(rows, columns=columns)
-        .sort_values(
-            ["prompts sent", "prompts validated", "answers voted"],
-            ascending=False,
-        )
-        .reset_index(drop=True)
+    sent = df["username"].value_counts()
+    validated = _validator_usernames(df).value_counts()
+    voted = _voter_usernames(df).value_counts()
+    users = sorted(set(sent.index) | set(validated.index) | set(voted.index))
+    out = pd.DataFrame(
+        {
+            "username": users,
+            "prompts sent": [int(sent.get(u, 0)) for u in users],
+            "prompts validated": [int(validated.get(u, 0)) for u in users],
+            "answers voted": [int(voted.get(u, 0)) for u in users],
+        },
+        columns=columns,
     )
+    return out.sort_values(
+        ["prompts sent", "prompts validated", "answers voted"],
+        ascending=False,
+    ).reset_index(drop=True)
