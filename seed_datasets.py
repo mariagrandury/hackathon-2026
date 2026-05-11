@@ -64,8 +64,8 @@ DUMMY_PARTICIPANTS = [
 ]
 
 
-def _validation(username: str, validated: bool = True) -> dict:
-    return {"validated": validated, "username": username}
+def _validation(username: str, choice: str = "relevant") -> dict:
+    return {"choice": choice, "username": username}
 
 
 def _vote(username: str, choice: str) -> dict:
@@ -96,7 +96,7 @@ DUMMY_PROMPTS = [
         "language": "es",
         "country": "cl",
         "prompt": "¿Cuál es la diferencia entre 'once' y 'cena' en Chile?",
-        "prompt_validation_1": _validation("bruno-br", validated=True),
+        "prompt_validation_1": _validation("bruno-br"),
         "prompt_validation_2": dict(EMPTY_VALIDATION),
         "prompt_validation_3": dict(EMPTY_VALIDATION),
         "answer_a": "",
@@ -112,9 +112,9 @@ DUMMY_PROMPTS = [
         "language": "pt",
         "country": "br",
         "prompt": "Qual é o prato típico do São João no Nordeste do Brasil?",
-        "prompt_validation_1": _validation("alice-cl", validated=True),
-        "prompt_validation_2": _validation("carla-co", validated=True),
-        "prompt_validation_3": _validation("diogo-pt", validated=True),
+        "prompt_validation_1": _validation("alice-cl"),
+        "prompt_validation_2": _validation("carla-co"),
+        "prompt_validation_3": _validation("diogo-pt"),
         "answer_a": (
             "No Nordeste, o São João é celebrado com canjica, pamonha, "
             "bolo de milho e quentão."
@@ -134,9 +134,9 @@ DUMMY_PROMPTS = [
         "language": "es",
         "country": "co",
         "prompt": "¿Qué se come tradicionalmente en una novena de Navidad en Colombia?",
-        "prompt_validation_1": _validation("mariagrandury", validated=True),
-        "prompt_validation_2": _validation("bruno-br", validated=True),
-        "prompt_validation_3": _validation("diogo-pt", validated=True),
+        "prompt_validation_1": _validation("mariagrandury"),
+        "prompt_validation_2": _validation("bruno-br"),
+        "prompt_validation_3": _validation("diogo-pt"),
         "answer_a": (
             "Buñuelos, natilla y manjar blanco son los infaltables; "
             "se acompañan con chocolate caliente."

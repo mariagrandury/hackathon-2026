@@ -48,6 +48,7 @@ from data import (
 )
 
 VOTE_CHOICES = ("a", "b", "both", "none")
+VALIDATION_CHOICES = ("trivial", "stereotype", "unrelated", "relevant")
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
@@ -84,7 +85,12 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
-        "validation_ok_label": "OK",
+        "validation_choice_label": "How would you classify this prompt?",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Stereotyping / non-neutral",
+        "validation_choice_unrelated": "Unrelated to any country's culture",
+        "validation_choice_relevant": "Relevant for understanding a country's culture",
+        "validation_choice_required": "Pick one of the four options before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
         "validation_in_progress": "Validating prompt #{idx} (slot {i}).",
@@ -150,7 +156,12 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
-        "validation_ok_label": "OK",
+        "validation_choice_label": "¿Cómo clasificarías este prompt?",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Estereotipos / no neutral",
+        "validation_choice_unrelated": "No relacionado con la cultura de un país",
+        "validation_choice_relevant": "Relevante para comprender la cultura de un país",
+        "validation_choice_required": "Selecciona una de las cuatro opciones antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
         "validation_in_progress": "Validando el prompt #{idx} (slot {i}).",
@@ -216,7 +227,12 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
-        "validation_ok_label": "OK",
+        "validation_choice_label": "Como você classificaria este prompt?",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Estereótipos / não neutro",
+        "validation_choice_unrelated": "Não relacionado com a cultura de um país",
+        "validation_choice_relevant": "Relevante para compreender a cultura de um país",
+        "validation_choice_required": "Selecione uma das quatro opções antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
         "validation_in_progress": "Validando o prompt #{idx} (slot {i}).",
@@ -356,7 +372,7 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
 def save_validation(
     idx: int,
     slot: int,
-    ok: bool,
+    choice: str,
     lang: str,
     profile: gr.OAuthProfile | None,
 ) -> str:
@@ -365,11 +381,13 @@ def save_validation(
         return s["login_required"]
     if idx is None or idx < 0 or slot not in (1, 2, 3):
         return s["load_first"]
+    if choice not in VALIDATION_CHOICES:
+        return s["validation_choice_required"]
     df = load_prompts_df()
     if idx >= len(df):
         return s["out_of_range"]
     df.at[idx, f"prompt_validation_{slot}"] = {
-        "validated": bool(ok),
+        "choice": choice,
         "username": profile.username,
     }
     push_prompts_df(df)
@@ -480,6 +498,12 @@ def _build_writing_tab(language: gr.State) -> dict:
     }
 
 
+def _validation_radio_choices(lang: str) -> list[tuple[str, str]]:
+    """`(label, value)` pairs for the validation radio, in display order."""
+    s = _t(lang)
+    return [(s[f"validation_choice_{c}"], c) for c in VALIDATION_CHOICES]
+
+
 def _build_validation_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
     idx_state = gr.State(-1)
@@ -490,7 +514,11 @@ def _build_validation_tab(language: gr.State) -> dict:
         lines=5,
         interactive=False,
     )
-    ok_check = gr.Checkbox(label=s["validation_ok_label"], value=False)
+    choice_radio = gr.Radio(
+        choices=_validation_radio_choices(DEFAULT_LANG),
+        label=s["validation_choice_label"],
+        value=None,
+    )
     with gr.Row():
         load_btn = gr.Button(s["validation_load_button"])
         save_val_btn = gr.Button(
@@ -505,13 +533,13 @@ def _build_validation_tab(language: gr.State) -> dict:
     )
     save_val_btn.click(
         save_validation,
-        inputs=[idx_state, slot_state, ok_check, language],
+        inputs=[idx_state, slot_state, choice_radio, language],
         outputs=save_val_status,
     )
     return {
         "load_status": load_status,
         "current_prompt": current_prompt,
-        "ok_check": ok_check,
+        "choice_radio": choice_radio,
         "load_btn": load_btn,
         "save_btn": save_val_btn,
         "save_status": save_val_status,
@@ -746,7 +774,11 @@ def init_ui(profile: gr.OAuthProfile | None):
         # Validation (labels + initial status)
         gr.update(value=s["validation_load_status_initial"]),
         gr.update(label=s["validation_prompt_label"]),
-        gr.update(label=s["validation_ok_label"]),
+        gr.update(
+            choices=_validation_radio_choices(lang),
+            label=s["validation_choice_label"],
+            value=None,
+        ),
         gr.update(value=s["validation_load_button"]),
         gr.update(value=s["validation_save_button"]),
         # Voting (labels + initial status)
@@ -824,7 +856,7 @@ def build_demo() -> gr.Blocks:
                 writing["save_btn"],
                 validation["load_status"],
                 validation["current_prompt"],
-                validation["ok_check"],
+                validation["choice_radio"],
                 validation["load_btn"],
                 validation["save_btn"],
                 voting["status_md"],

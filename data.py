@@ -21,10 +21,10 @@ PROMPTS_REPO = "mariagrandury/cultural_preferences"
 load_dotenv()
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
-EMPTY_VALIDATION = {"validated": False, "username": ""}
+EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
 
-VALIDATION_STRUCT = {"validated": Value("bool"), "username": Value("string")}
+VALIDATION_STRUCT = {"choice": Value("string"), "username": Value("string")}
 VOTE_STRUCT = {"choice": Value("string"), "username": Value("string")}
 
 PARTICIPANTS_FEATURES = Features(
@@ -81,7 +81,10 @@ def participant_info(username: str) -> Optional[dict]:
 
 
 def is_fully_validated(row) -> bool:
-    return all(row[f"prompt_validation_{i}"]["validated"] for i in (1, 2, 3))
+    return all(
+        row[f"prompt_validation_{i}"]["choice"] == "relevant"
+        for i in (1, 2, 3)
+    )
 
 
 def has_answers(row) -> bool:
