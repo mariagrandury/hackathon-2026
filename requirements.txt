@@ -1,0 +1,5 @@
+gradio[oauth]==4.44.1
+datasets>=2.20.0,<4.0.0
+huggingface_hub>=0.24.0,<1.0
+pandas>=2.1.0
+python-dotenv>=1.0.0
