@@ -22,7 +22,14 @@ answers. All state lives in two private datasets on the Hub.
   predicates (`is_fully_validated`, `has_answers`), and aggregations for the
   leaderboard (`user_stats`, `country_counts`, `ranking_df`).
 - **`seed_datasets.py`** — one-shot script that overwrites both private
-  datasets with dummy rows in the current schema.
+  datasets with dummy rows in the current schema. Used for local testing
+  without v0 data.
+- **`migrate_from_v0.py`** — one-shot script that pulls the 1328 prompts
+  from `mariagrandury/dataset-preferencias-v0` and writes them into
+  `cultural_preferences` in our schema (empty validation/vote slots,
+  random per-row A/B assignment so voters don't see a fixed correlation
+  with v0's chosen answer; model columns preserve which side was v0's
+  chosen vs rejected for offline analysis). Use this for the real run.
 - **`guidelines.md`** — placeholder annotation guidelines, rendered as the
   first tab.
 - **`requirements.txt`** — pins `gradio[oauth]==4.44.1`,
