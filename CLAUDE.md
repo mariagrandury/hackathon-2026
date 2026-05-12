@@ -116,11 +116,21 @@ username is in the participants seed (the default seed includes
 
 ## Deploying to Hugging Face Spaces
 
-1. Create a private Gradio Space named `mariagrandury/hackathon-2026`.
+The Space lives at `somosnlp-hackathon-2026/cultural-preferences` (private,
+Gradio SDK). Datasets stay under `mariagrandury/` — Space and dataset owners
+are intentionally different.
+
+1. Create a private Gradio Space at `somosnlp-hackathon-2026/cultural-preferences`.
+   Don't use the README template — first push from `deploy_to_space.sh`
+   should land cleanly without a merge.
 2. In the Space settings, add an `HF_TOKEN` secret with read+write access to
-   the two private datasets.
-3. Push this branch to the Space repo (the `README.md` front matter is the
-   Space config).
+   the two private `mariagrandury/...` datasets.
+3. Don't push this whole repo. The Space mirror is curated:
+   `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `requirements.txt`,
+   `README.md`, `guidelines/`, `images/` into a sibling clone of the Space repo
+   (default `../2026-space-cultural-preferences`). Commit + push from that clone.
+   `CLAUDE.md`, `seed_datasets.py`, `migrate_from_v0.py`, `test_integration.py`,
+   `data/`, `.env*` deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.

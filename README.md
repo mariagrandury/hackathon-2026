@@ -41,7 +41,13 @@ python app.py
 
 ## Deploying to Hugging Face Spaces
 
-1. Create a new (private) Space named `mariagrandury/hackathon-2026` with
-   the Gradio SDK.
-2. Add `HF_TOKEN` as a Space secret.
-3. Push this repository to the Space.
+The Space lives at `somosnlp-hackathon-2026/cultural-preferences` (private,
+Gradio SDK). Datasets stay under `mariagrandury/`.
+
+1. Create the Space under the `somosnlp-hackathon-2026` org (Gradio SDK,
+   private). Skip the README template so the first push isn't blocked.
+2. Add `HF_TOKEN` as a Space secret with read+write on the two datasets above.
+3. Use `./deploy_to_space.sh` to mirror only the runtime files
+   (`app.py`, `data.py`, `requirements.txt`, `README.md`, `guidelines/`,
+   `images/`) into a local clone of the Space repo, then `git push` from
+   that clone. See the script header for details.
