@@ -37,16 +37,17 @@ import data  # noqa: E402
 
 PARTICIPANTS_DF = pd.DataFrame(
     [
-        {
-            "username": "mariagrandury",
-            "language": "es",
-            "country": "es",
-            "gmail": "maria@x",
-        },
-        {"username": "alice-cl", "language": "es", "country": "cl", "gmail": "alice@x"},
-        {"username": "bruno-br", "language": "pt", "country": "br", "gmail": "bruno@x"},
-        {"username": "carla-co", "language": "es", "country": "co", "gmail": "carla@x"},
-        {"username": "diogo-pt", "language": "pt", "country": "pt", "gmail": "diogo@x"},
+        # Country filter (#3 from TODO.md) only shows a user prompts grounded
+        # in their own country. Tests need ≥3 participants per country we
+        # want to "fully validate" a prompt in.
+        {"username": "mariagrandury", "language": "es", "country": "es", "gmail": "maria@x"},
+        {"username": "evan-es",       "language": "es", "country": "es", "gmail": "evan@x"},
+        {"username": "alice-cl",      "language": "es", "country": "cl", "gmail": "alice@x"},
+        {"username": "alice2-cl",     "language": "es", "country": "cl", "gmail": "alice2@x"},
+        {"username": "alice3-cl",     "language": "es", "country": "cl", "gmail": "alice3@x"},
+        {"username": "bruno-br",      "language": "pt", "country": "br", "gmail": "bruno@x"},
+        {"username": "carla-co",      "language": "es", "country": "co", "gmail": "carla@x"},
+        {"username": "diogo-pt",      "language": "pt", "country": "pt", "gmail": "diogo@x"},
     ]
 )
 
@@ -90,14 +91,17 @@ def _seed_prompts() -> pd.DataFrame:
             "answer_chosen_2": _empty_vote(),
             "answer_chosen_3": _empty_vote(),
         },
-        # 1 — partially validated (1 of 3).
+        # 1 — cl row with all slots empty (used to exercise the full
+        # "3 relevant validations unlocks voting" flow with the cl
+        # participants in test 14).
         {
+            "id": 2,
             "username": "v0",
             "language": "es",
             "country": "cl",
             "system_prompt": "",
             "prompt": "¿Qué es una 'completada' en Chile?",
-            "prompt_validation_1": _val("bruno-br"),
+            "prompt_validation_1": _empty_val(),
             "prompt_validation_2": _empty_val(),
             "prompt_validation_3": _empty_val(),
             "answer_a": "Una reunión informal para comer completos (hot dogs).",
@@ -110,6 +114,7 @@ def _seed_prompts() -> pd.DataFrame:
         },
         # 2 — already fully validated, answers present, no votes yet.
         {
+            "id": 3,
             "username": "v0",
             "language": "pt",
             "country": "br",
@@ -128,6 +133,7 @@ def _seed_prompts() -> pd.DataFrame:
         },
         # 3 — tie/both_bad style: prompt + system msg but NO answers.
         {
+            "id": 4,
             "username": "v0",
             "language": "es",
             "country": "co",
@@ -147,6 +153,7 @@ def _seed_prompts() -> pd.DataFrame:
         # 4 — authored by the test user themselves (should be skipped by
         # the validation picker, but voteable when fully validated).
         {
+            "id": 5,
             "username": "mariagrandury",
             "language": "es",
             "country": "es",
@@ -166,6 +173,7 @@ def _seed_prompts() -> pd.DataFrame:
         # 5 — fully validated but one validator is the test user (so they
         # can't pick it for validation; can vote on it).
         {
+            "id": 6,
             "username": "v0",
             "language": "es",
             "country": "ec",
@@ -200,9 +208,9 @@ def fake_load_participants() -> pd.DataFrame:
 push_calls: list[tuple[float, int]] = []
 
 
-def fake_push(df: pd.DataFrame) -> None:
+def fake_push(df: pd.DataFrame, commit_message: str | None = None) -> None:
     STATE["prompts"] = df.copy()
-    push_calls.append((time.monotonic(), len(df)))
+    push_calls.append((time.monotonic(), len(df), commit_message))
 
 
 # Patch BEFORE importing app — app's ``from data import …`` will then pick
@@ -350,10 +358,14 @@ def test_validation_picker_skips():
 
 def test_validation_save_advances_state():
     section("6. save_validation — write + verify state change")
-    user = profile("alice-cl")
+    # Use alice2-cl: from cl, hasn't validated row 1 yet, so the picker
+    # will hand them the row (alice-cl already filled slot 1 in the seed).
+    user = profile("alice2-cl")
     (idx0, slot0, *_), _ = T.time(
-        "fetch_next_validation (alice-cl)", app.fetch_next_validation, "es", user
+        "fetch_next_validation (alice2-cl)", app.fetch_next_validation, "es", user
     )
+    check("picker returns row 1 (cl, has empty slots)", idx0 == 1,
+          f"got idx={idx0}")
 
     pre = STATE["prompts"].at[idx0, f"prompt_validation_{slot0}"]
     check("target slot empty before save", pre["username"] == "")
@@ -374,26 +386,24 @@ def test_validation_save_advances_state():
     radio_upd = out[3]
     check("choice radio is reset (value=None)",
           isinstance(radio_upd, dict) and radio_upd.get("value") is None)
-    next_idx_returned = out[0]
-    check("auto-advances to a different row in same response",
-          next_idx_returned != idx0,
-          f"advanced from row {idx0} to row {next_idx_returned}")
 
     post = STATE["prompts"].at[idx0, f"prompt_validation_{slot0}"]
     check(
-        "slot now records alice-cl with choice='relevant'",
-        post["username"] == "alice-cl" and post["choice"] == "relevant",
+        "slot now records alice2-cl with choice='relevant'",
+        post["username"] == "alice2-cl" and post["choice"] == "relevant",
         f"{post}",
     )
 
-    # Picker no longer offers the same row to alice-cl.
+    # Picker no longer offers the same row to alice2-cl (she's now a validator).
     (idx1, slot1, *_), _ = T.time(
-        "fetch_next_validation (alice-cl, after save)",
+        "fetch_next_validation (alice2-cl, after save)",
         app.fetch_next_validation,
         "es",
         user,
     )
-    check("picker skips the row alice-cl just validated", idx1 != idx0)
+    check("picker skips the row alice2-cl just validated",
+          idx1 != idx0,
+          f"got idx={idx1}")
 
 
 def test_save_validation_self_skip():
@@ -411,15 +421,18 @@ def test_save_validation_self_skip():
 
 def test_voting_flow():
     section("8. fetch_next_voting + save_vote — full flow")
-    # mariagrandury can vote on row 2 (fully validated, has answers, she's
-    # not a validator there) and row 5 (fully validated, she is a validator
-    # there but voting allows that).
+    # With the country filter, mariagrandury (country=es) only sees es rows
+    # for voting. Of those, row 4 is the one that is fully validated AND
+    # has answers AND hasn't been voted on yet — so the picker returns 4.
+    # (Row 2 is br, row 5 is ec — both filtered out by country.)
     user = profile("mariagrandury")
     (idx, slot, prompt_display, ans_a, ans_b, status), _ = T.time(
         "fetch_next_voting (mariagrandury)", app.fetch_next_voting, "es", user
     )
     check(
-        "returns a fully-validated prompt with answers", idx in (2, 5), f"got idx={idx}"
+        "country-filtered picker returns row 4 (es, validated, answered)",
+        idx == 4,
+        f"got idx={idx}",
     )
     check("answer_a is non-empty", bool(ans_a))
     check("answer_b is non-empty", bool(ans_b))
@@ -448,19 +461,16 @@ def test_voting_flow():
 
 def test_voting_blocks_unvalidated():
     section("9. voting picker — blocks unvalidated rows")
-    # Row 0 is unvalidated. Even though it has answers, voting should not offer it.
-    # bruno-br has not yet validated row 1; only row 2 is fully validated +
-    # already voted on above. Row 5 should be offered.
+    # bruno-br is from br. With the country filter, only row 2 (br) is
+    # visible — and it's the one that is fully validated with answers and
+    # hasn't been voted on by bruno-br. The picker must return idx=2.
+    # (The unvalidated/partial/answer-less gates still apply per-row; we
+    # implicitly test them via the country=br slice.)
     user = profile("bruno-br")
     (idx, *_), _ = T.time(
         "fetch_next_voting (bruno-br)", app.fetch_next_voting, "es", user
     )
-    check(
-        "returns a fully-validated row with answers", idx in (2, 4, 5), f"got idx={idx}"
-    )
-    check("never returns row 0 (unvalidated)", idx != 0)
-    check("never returns row 1 (partially validated)", idx != 1)
-    check("never returns row 3 (no answers)", idx != 3)
+    check("returns row 2 (br, validated, answered)", idx == 2, f"got idx={idx}")
 
 
 def test_save_prompt():
@@ -538,16 +548,18 @@ def test_save_prompt_input_validation():
 
 
 def test_save_prompt_round_trip_in_validation_picker():
-    section("12. round trip — saved prompt is offered to other users for validation")
-    # alice-cl just saved on row 0, but we want to see if the prompt
-    # mariagrandury saved in test 10 shows up for, say, bruno-br.
-    user = profile("bruno-br")
+    section("12. round trip — saved prompt is offered to a country-matching user")
+    # mariagrandury saved a prompt in test 10. Her country is 'es' so the
+    # prompt was stored with country='es'. Another es user (evan-es) should
+    # be able to see and validate it. (With the country filter, bruno-br
+    # (br) wouldn't — that's the whole point.)
+    user = profile("evan-es")
     seen_idx = None
-    for _ in range(50):  # picker is greedy; iterate a few times in case
+    for _ in range(50):
         (idx, slot, prompt_display, *_), _dt = T.time(
-            "fetch_next_validation (bruno-br) — scanning",
+            "fetch_next_validation (evan-es) — scanning",
             app.fetch_next_validation,
-            "pt",
+            "es",
             user,
         )
         if "Feria de Abril" in prompt_display:
@@ -559,11 +571,11 @@ def test_save_prompt_round_trip_in_validation_picker():
         df = STATE["prompts"].copy()
         df.at[idx, f"prompt_validation_{slot}"] = {
             "choice": "trivial",
-            "username": "bruno-br",
+            "username": "evan-es",
         }
         STATE["prompts"] = df
     check(
-        "the just-saved prompt was eventually offered for validation",
+        "the just-saved prompt was eventually offered to a same-country user",
         seen_idx is not None,
         f"seen_idx={seen_idx}",
     )
@@ -584,9 +596,11 @@ def test_leaderboard():
 
 def test_full_validation_unlocks_voting():
     section("14. invariant — 3 'relevant' validations unlock voting")
-    # Take row 1 (partially validated by bruno-br) and complete it.
+    # Test 6 already filled row 1's first empty slot with alice2-cl. We fill
+    # the remaining two with alice-cl + alice3-cl (all from cl, none is yet
+    # a validator on row 1 thanks to the already-validated guard).
     idx = 1
-    for user, slot in (("alice-cl", 2), ("carla-co", 3)):
+    for user, slot in (("alice-cl", 2), ("alice3-cl", 3)):
         msg, _ = T.time(
             f"save_validation ({user}) on row 1",
             app.save_validation,
@@ -600,7 +614,7 @@ def test_full_validation_unlocks_voting():
     final = STATE["prompts"].at[idx, "prompt_validation_3"]
     check(
         "row 1 now fully validated",
-        final["username"] == "carla-co" and final["choice"] == "relevant",
+        final["username"] == "alice3-cl" and final["choice"] == "relevant",
     )
 
     # Confirm it's now in the voting pool.
@@ -628,6 +642,113 @@ def test_full_validation_unlocks_voting():
     check("voting picker now offers freshly-validated row 1", seen)
 
 
+def test_country_filter_and_audit_trail():
+    section("15. TODO features — country filter, already-validated guard, ID, commit msgs")
+
+    # 15a. Country filter: alice-cl (cl) must NEVER see es/br/co/ec rows.
+    user = profile("alice-cl")
+    for _ in range(30):
+        (idx, slot, *_), _ = T.time(
+            "fetch_next_validation (alice-cl) — drain",
+            app.fetch_next_validation,
+            "es",
+            user,
+        )
+        if idx == -1:
+            break
+        c = STATE["prompts"].at[idx, "country"]
+        check(
+            f"row {idx} matches alice-cl's country (cl)",
+            c == "cl",
+            f"got country={c}",
+        )
+        # advance via direct write so the picker moves past it
+        df = STATE["prompts"].copy()
+        df.at[idx, f"prompt_validation_{slot}"] = {
+            "choice": "trivial",
+            "username": "alice-cl",
+        }
+        STATE["prompts"] = df
+
+    # 15b. Already-validated guard silently swallows duplicates.
+    # Row 1 already has alice-cl as a validator (just added above). A
+    # re-submission (stale form / extra browser tab) must NOT clobber:
+    # no new push, status remains the friendly "saved" string, picker
+    # advances. The intent of the click is already fulfilled.
+    push_count_before = len(push_calls)
+    row1_state_before = STATE["prompts"].at[1, "prompt_validation_2"].copy()
+    out, _ = T.time(
+        "save_validation (alice-cl) re-attempt on row 1",
+        app.save_validation, 1, 2, "relevant", "es", profile("alice-cl"),
+    )
+    check(
+        "no extra push happened (duplicate write skipped)",
+        len(push_calls) == push_count_before,
+        f"pushes: {push_count_before} → {len(push_calls)}",
+    )
+    check(
+        "row 1's slot 2 was not overwritten",
+        STATE["prompts"].at[1, "prompt_validation_2"] == row1_state_before,
+        f"slot 2 changed: {row1_state_before} → {STATE['prompts'].at[1, 'prompt_validation_2']}",
+    )
+    msg = out[-1]
+    check(
+        "shows the regular 'saved' status (silent swallow, internal-only)",
+        "saved" in msg.lower() or "guardad" in msg.lower() or "salv" in msg.lower(),
+        msg,
+    )
+
+    # 15c. ID column: every row has an int id; new save_prompt assigns max+1.
+    user_es = profile("mariagrandury")
+    pre_max = int(STATE["prompts"]["id"].max())
+    out, _ = T.time(
+        "save_prompt (audit-trail check)",
+        app.save_prompt, "", "test id assignment", "es", user_es,
+    )
+    new_id = int(STATE["prompts"].iloc[-1]["id"])
+    check(
+        "new prompt's id == previous max + 1",
+        new_id == pre_max + 1,
+        f"pre_max={pre_max}, new_id={new_id}",
+    )
+
+    # 15d. Commit messages contain the right action + ID.
+    # Look at the most recent push_call — should be the save_prompt above.
+    last_push = push_calls[-1]
+    msg = last_push[2] or ""
+    check(
+        "save_prompt commit message includes the username + ID",
+        f"with ID {new_id}" in msg and "mariagrandury" in msg and "sent" in msg,
+        msg,
+    )
+    # An earlier save_validation commit message should have "validated".
+    validate_msgs = [c[2] for c in push_calls if c[2] and "validated" in c[2]]
+    check(
+        "at least one push had a 'validated prompt with ID …' commit message",
+        len(validate_msgs) > 0,
+        f"{len(validate_msgs)} validate messages logged",
+    )
+    vote_msgs = [c[2] for c in push_calls if c[2] and "voted" in c[2]]
+    check(
+        "at least one push had a 'voted prompt with ID …' commit message",
+        len(vote_msgs) > 0,
+        f"{len(vote_msgs)} vote messages logged",
+    )
+
+    # 15e. Status string format: "Validando el prompt #N (Country)"
+    # — uses country, not slot number.
+    (idx, slot, _disp, status), _ = T.time(
+        "fetch_next_validation (carla-co) for status string check",
+        app.fetch_next_validation, "es", profile("carla-co"),
+    )
+    if idx != -1:
+        check(
+            "status mentions country name in display form (not 'slot')",
+            "slot" not in status.lower(),
+            f"status: {status!r}",
+        )
+
+
 def main() -> None:
     t_start = time.monotonic()
     test_demo_builds()
@@ -644,6 +765,7 @@ def main() -> None:
     test_save_prompt_round_trip_in_validation_picker()
     test_leaderboard()
     test_full_validation_unlocks_voting()
+    test_country_filter_and_audit_trail()
     t_total = time.monotonic() - t_start
 
     print()

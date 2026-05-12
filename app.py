@@ -24,15 +24,19 @@ a regular input and look up the right string in ``T``.
 
 from __future__ import annotations
 
+import logging
 import os
 
 import gradio as gr
 import pandas as pd
 
+log = logging.getLogger("hackathon")
+
 from data import (
     EMPTY_VALIDATION,
     EMPTY_VOTE,
     country_counts,
+    country_display,
     has_answers,
     is_fully_validated,
     load_prompts_df,
@@ -100,7 +104,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_required": "Pick one of the four options before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
-        "validation_in_progress": "Validating prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validating prompt #{id} ({country}).",
         "validation_no_more": "No more prompts available for validation right now.",
         "validation_saved": "Validation saved.",
         # Voting
@@ -113,7 +117,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B is better",
         "voting_both_button": "Both good",
         "voting_none_button": "No good",
-        "voting_in_progress": "Voting on prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Voting on prompt #{id} ({country}).",
         "voting_no_more": "No more validated prompts available for voting right now.",
         # Leaderboard
         "leaderboard_refresh_button": "Refresh",
@@ -147,7 +151,7 @@ T: dict[str, dict[str, str]] = {
         "tab_writing": "Escribir prompts",
         "tab_validation": "Validar prompts",
         "tab_voting": "Votar respuestas",
-        "tab_leaderboard": "Clasificación",
+        "tab_leaderboard": "Ranking",
         "guidelines_missing": "Las pautas en este idioma todavía no están disponibles.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
@@ -176,7 +180,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_required": "Selecciona una de las cuatro opciones antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
-        "validation_in_progress": "Validando el prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validando el prompt #{id} ({country}).",
         "validation_no_more": "No hay más prompts disponibles para validar ahora mismo.",
         "validation_saved": "Validación guardada.",
         # Voting
@@ -189,7 +193,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B es mejor",
         "voting_both_button": "Ambas buenas",
         "voting_none_button": "Ninguna buena",
-        "voting_in_progress": "Votando el prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Votando el prompt #{id} ({country}).",
         "voting_no_more": "No hay más prompts validados disponibles para votar ahora mismo.",
         # Leaderboard
         "leaderboard_refresh_button": "Actualizar",
@@ -252,7 +256,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_required": "Selecione uma das quatro opções antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
-        "validation_in_progress": "Validando o prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validando o prompt #{id} ({country}).",
         "validation_no_more": "Não há mais prompts disponíveis para validação no momento.",
         "validation_saved": "Validação salva.",
         # Voting
@@ -265,7 +269,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B é melhor",
         "voting_both_button": "Ambas boas",
         "voting_none_button": "Nenhuma boa",
-        "voting_in_progress": "Votando no prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Votando no prompt #{id} ({country}).",
         "voting_no_more": "Não há mais prompts validados disponíveis para votação no momento.",
         # Leaderboard
         "leaderboard_refresh_button": "Atualizar",
@@ -364,7 +368,9 @@ def save_prompt(
         )
 
     df = load_prompts_df()
+    next_id = int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
     new_row = {
+        "id": next_id,
         "username": profile.username,
         "language": info["language"],
         "country": info["country"],
@@ -382,7 +388,10 @@ def save_prompt(
         "answer_chosen_3": dict(EMPTY_VOTE),
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    push_prompts_df(df)
+    push_prompts_df(
+        df,
+        commit_message=f"{profile.username} sent prompt with ID {next_id}",
+    )
     return (
         s["writing_saved"],
         gr.update(value=""),  # clear system_box
@@ -397,12 +406,20 @@ def save_prompt(
 
 def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt_text, status)`` for the next prompt the
-    user can validate. ``idx == -1`` means nothing to do."""
+    user can validate. ``idx == -1`` means nothing to do.
+
+    Filters to the user's own country (only prompts grounded in their
+    culture are shown). Users with no registered country fall through and
+    see all prompts."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", s["login_required"]
+    info = participant_info(profile.username)
+    user_country = info.get("country") if info else None
     df = load_prompts_df()
     for idx, row in df.iterrows():
+        if user_country and row.get("country") != user_country:
+            continue
         if row["username"] == profile.username:
             continue
         if any(
@@ -417,11 +434,15 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
                     row.get("system_prompt", ""),
                     row["prompt"],
                 )
+                prompt_id = int(row.get("id", idx))
                 return (
                     int(idx),
                     i,
                     display,
-                    s["validation_in_progress"].format(idx=int(idx), i=i),
+                    s["validation_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
                 )
     return -1, -1, "", s["validation_no_more"]
 
@@ -458,11 +479,29 @@ def save_validation(
     df = load_prompts_df()
     if idx >= len(df):
         return (*keep_state, s["out_of_range"])
-    df.at[idx, f"prompt_validation_{slot}"] = {
-        "choice": choice,
-        "username": profile.username,
-    }
-    push_prompts_df(df)
+
+    # Defensive: if this user is already a validator on this row (stale
+    # form, second browser tab, replayed request, etc.) swallow the
+    # duplicate silently — their intent is already fulfilled by the
+    # earlier save. Advance to the next prompt as if it had just landed.
+    already = any(
+        df.at[idx, f"prompt_validation_{i}"]["username"] == profile.username
+        for i in (1, 2, 3)
+    )
+    if already:
+        log.info(
+            "skipped double-validation: user=%s row=%d", profile.username, idx
+        )
+    else:
+        df.at[idx, f"prompt_validation_{slot}"] = {
+            "choice": choice,
+            "username": profile.username,
+        }
+        prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
+        push_prompts_df(
+            df,
+            commit_message=f"{profile.username} validated prompt with ID {prompt_id}",
+        )
 
     # Advance to the next prompt and reset the radio.
     next_idx, next_slot, next_prompt, next_status = fetch_next_validation(
@@ -474,7 +513,7 @@ def save_validation(
         next_prompt,               # current_prompt
         gr.update(value=None),     # choice_radio reset
         next_status,               # load_status
-        s["validation_saved"],     # save_status
+        s["validation_saved"],     # save_status (same whether we wrote or skipped)
     )
 
 
@@ -487,13 +526,18 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt, answer_a, answer_b, status)`` for the next
     fully-validated prompt the user can vote on. ``idx == -1`` means nothing.
 
-    Users *can* vote on their own prompts (unlike validation).
-    """
+    Users *can* vote on their own prompts (unlike validation). Filters to
+    the user's own country — voters only judge cultural appropriateness of
+    answers grounded in their own culture."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
+    info = participant_info(profile.username)
+    user_country = info.get("country") if info else None
     df = load_prompts_df()
     for idx, row in df.iterrows():
+        if user_country and row.get("country") != user_country:
+            continue
         if not is_fully_validated(row) or not has_answers(row):
             continue
         if any(
@@ -507,13 +551,17 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
                     row.get("system_prompt", ""),
                     row["prompt"],
                 )
+                prompt_id = int(row.get("id", idx))
                 return (
                     int(idx),
                     i,
                     display,
                     row["answer_a"],
                     row["answer_b"],
-                    s["voting_in_progress"].format(idx=int(idx), i=i),
+                    s["voting_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
                 )
     return -1, -1, "", "", "", s["voting_no_more"]
 
@@ -538,7 +586,11 @@ def save_vote(
         "choice": choice,
         "username": profile.username,
     }
-    push_prompts_df(df)
+    prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
+    push_prompts_df(
+        df,
+        commit_message=f"{profile.username} voted prompt with ID {prompt_id}",
+    )
     return fetch_next_voting(lang, profile)
 
 

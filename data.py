@@ -38,6 +38,10 @@ PARTICIPANTS_FEATURES = Features(
 
 PROMPTS_FEATURES = Features(
     {
+        # Stable, human-readable identifier (1-indexed, sequential). Used in
+        # the commit message of every save so the HF dataset's commit
+        # history doubles as an audit log.
+        "id": Value("int64"),
         "username": Value("string"),
         "language": Value("string"),
         "country": Value("string"),
@@ -58,6 +62,41 @@ PROMPTS_FEATURES = Features(
     }
 )
 
+# 2-letter ISO → display name for the country shown to annotators (in the
+# in-progress status messages). Falls back to the uppercase code if a
+# country isn't in the map.
+COUNTRY_DISPLAY_NAMES: dict[str, str] = {
+    "es": "España",
+    "cu": "Cuba",
+    "co": "Colombia",
+    "py": "Paraguay",
+    "ec": "Ecuador",
+    "cl": "Chile",
+    "pe": "Perú",
+    "mx": "México",
+    "ni": "Nicaragua",
+    "br": "Brasil",
+    "pt": "Portugal",
+    "us": "USA",
+    "ar": "Argentina",
+    "uy": "Uruguay",
+    "ve": "Venezuela",
+    "bo": "Bolivia",
+    "cr": "Costa Rica",
+    "do": "República Dominicana",
+    "gt": "Guatemala",
+    "hn": "Honduras",
+    "pa": "Panamá",
+    "pr": "Puerto Rico",
+    "sv": "El Salvador",
+}
+
+
+def country_display(code: str | None) -> str:
+    if not code:
+        return "?"
+    return COUNTRY_DISPLAY_NAMES.get(code, code.upper())
+
 
 def load_participants_df() -> pd.DataFrame:
     return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
@@ -67,10 +106,22 @@ def load_prompts_df() -> pd.DataFrame:
     return load_dataset(PROMPTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
-def push_prompts_df(df: pd.DataFrame) -> None:
+def push_prompts_df(
+    df: pd.DataFrame, commit_message: str | None = None
+) -> None:
+    """Push ``df`` to the prompts repo with an optional commit message.
+
+    Callers pass a per-action message like
+    ``"mariagrandury validated prompt with ID 42"`` so the HF repo's commit
+    history reads like an activity log (visible on huggingface.co)."""
     Dataset.from_pandas(
         df, preserve_index=False, features=PROMPTS_FEATURES
-    ).push_to_hub(PROMPTS_REPO, private=True, token=HF_TOKEN)
+    ).push_to_hub(
+        PROMPTS_REPO,
+        private=True,
+        token=HF_TOKEN,
+        commit_message=commit_message,
+    )
 
 
 def participant_info(username: str) -> Optional[dict]:
