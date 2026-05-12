@@ -47,6 +47,13 @@ VALIDATION_CHOICES = ("trivial", "stereotype", "unrelated", "relevant")
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
+IMAGES_DIR = "images"
+
+# Register ``images/`` as a static directory so the guidelines Markdown can
+# embed local infographics via ``/file=images/...`` URLs. Without this,
+# Gradio's ``/file=`` route refuses the request and the browser only
+# renders the alt text.
+gr.set_static_paths([IMAGES_DIR])
 
 
 # ---------------------------------------------------------------------------
@@ -845,7 +852,14 @@ def build_demo() -> gr.Blocks:
         with gr.Tabs():
             tab_guidelines = gr.Tab(s["tab_guidelines"])
             with tab_guidelines:
-                guidelines_md = gr.Markdown(_read_guidelines(DEFAULT_LANG))
+                # ``sanitize_html=False`` lets the guidelines render the
+                # inline ``<img>`` (infographics) and ``<center><a>`` (CTA
+                # buttons) tags. The markdown is repo-controlled content,
+                # not user input, so disabling sanitization is safe.
+                guidelines_md = gr.Markdown(
+                    _read_guidelines(DEFAULT_LANG),
+                    sanitize_html=False,
+                )
             tab_writing = gr.Tab(s["tab_writing"])
             with tab_writing:
                 writing = _build_writing_tab(language)

@@ -2,7 +2,7 @@
 
 ## How to participate in this challenge and help align language models with your culture
 
-![/images/eventos/260511_hackathon_eventbrite.png]
+![Hackathon banner](/file=images/eventos/260511_hackathon_eventbrite.png)
 
 We're only collecting preference prompts in Spanish and Portuguese. If you're from LATAM or the Iberian Peninsula — or have lived there long enough to know the local culture — check out the guide in [Spanish](https://somosnlp.org/hackathon/retos/preferencias) or [Portuguese](https://somosnlp.org/pt/hackathon/retos/preferencias).
 
