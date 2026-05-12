@@ -74,7 +74,7 @@ COUNTRY_MAP = {
 }
 
 
-def _row(src_row: dict, country_iso: str, rng: random.Random) -> dict:
+def _row(src_row: dict, country_iso: str, row_id: int, rng: random.Random) -> dict:
     # tie/both_bad rows still get migrated (the prompt is useful) but the
     # answer pair is dropped — the voting tab gates on has_answers(), so a
     # row with empty answers will sit in validation only until someone
@@ -98,6 +98,7 @@ def _row(src_row: dict, country_iso: str, rng: random.Random) -> dict:
             model_b = src_row["accepted_model"]
 
     return {
+        "id": row_id,
         "username": "v0",
         "language": "es",
         "country": country_iso,
@@ -139,14 +140,21 @@ def main() -> None:
 
     rng = random.Random(SEED)
     rows = []
+    next_id = 1
     for country_name, country_rows in by_country.items():
         country_iso = COUNTRY_MAP[country_name]
         for r in country_rows:
-            rows.append(_row(r, country_iso, rng))
+            rows.append(_row(r, country_iso, next_id, rng))
+            next_id += 1
 
     print(f"Pushing {len(rows)} rows to {PROMPTS_REPO} (overwriting)…")
     ds = Dataset.from_list(rows, features=PROMPTS_FEATURES)
-    ds.push_to_hub(PROMPTS_REPO, private=True, token=token)
+    ds.push_to_hub(
+        PROMPTS_REPO,
+        private=True,
+        token=token,
+        commit_message=f"migrate {len(rows)} prompts from dataset-2025.json",
+    )
     print("Done.")
 
 

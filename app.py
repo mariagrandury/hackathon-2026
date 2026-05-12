@@ -342,15 +342,26 @@ def save_prompt(
     prompt: str,
     lang: str,
     profile: gr.OAuthProfile | None,
-) -> str:
+):
+    """Append a new prompt and clear the textboxes on success.
+
+    Returns ``(status, system_box_update, prompt_box_update)``. On failure
+    the textboxes are left untouched (``gr.update()`` with no args), so the
+    user can fix the issue and re-submit. On success both clear, which is
+    the unambiguous "your text actually went through" cue."""
     s = _t(lang)
+    keep = gr.update()  # leave textbox value as-is
     if profile is None:
-        return s["login_required"]
+        return s["login_required"], keep, keep
     if not prompt or not prompt.strip():
-        return s["writing_empty"]
+        return s["writing_empty"], keep, keep
     info = participant_info(profile.username)
     if info is None:
-        return s["writing_not_participant"].format(username=profile.username)
+        return (
+            s["writing_not_participant"].format(username=profile.username),
+            keep,
+            keep,
+        )
 
     df = load_prompts_df()
     new_row = {
@@ -372,7 +383,11 @@ def save_prompt(
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     push_prompts_df(df)
-    return s["writing_saved"]
+    return (
+        s["writing_saved"],
+        gr.update(value=""),  # clear system_box
+        gr.update(value=""),  # clear prompt_box
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -417,23 +432,50 @@ def save_validation(
     choice: str,
     lang: str,
     profile: gr.OAuthProfile | None,
-) -> str:
+):
+    """Record the validation, then auto-advance to the next prompt and
+    reset the choice radio.
+
+    Returns updates for ``(idx_state, slot_state, current_prompt,
+    choice_radio, load_status, save_status)``. On input-validation errors
+    the visible inputs are left untouched (``gr.update()``); on successful
+    save the next prompt is loaded and the radio cleared so the user has
+    an unambiguous cue that the previous validation went through."""
     s = _t(lang)
+    keep_state = (
+        gr.update(),  # idx_state
+        gr.update(),  # slot_state
+        gr.update(),  # current_prompt
+        gr.update(),  # choice_radio
+        gr.update(),  # load_status
+    )
     if profile is None:
-        return s["login_required"]
+        return (*keep_state, s["login_required"])
     if idx is None or idx < 0 or slot not in (1, 2, 3):
-        return s["load_first"]
+        return (*keep_state, s["load_first"])
     if choice not in VALIDATION_CHOICES:
-        return s["validation_choice_required"]
+        return (*keep_state, s["validation_choice_required"])
     df = load_prompts_df()
     if idx >= len(df):
-        return s["out_of_range"]
+        return (*keep_state, s["out_of_range"])
     df.at[idx, f"prompt_validation_{slot}"] = {
         "choice": choice,
         "username": profile.username,
     }
     push_prompts_df(df)
-    return s["validation_saved"]
+
+    # Advance to the next prompt and reset the radio.
+    next_idx, next_slot, next_prompt, next_status = fetch_next_validation(
+        lang, profile
+    )
+    return (
+        next_idx,                  # idx_state
+        next_slot,                 # slot_state
+        next_prompt,               # current_prompt
+        gr.update(value=None),     # choice_radio reset
+        next_status,               # load_status
+        s["validation_saved"],     # save_status
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +577,7 @@ def _build_writing_tab(language: gr.State) -> dict:
     save_btn.click(
         save_prompt,
         inputs=[system_box, prompt_box, language],
-        outputs=save_status,
+        outputs=[save_status, system_box, prompt_box],
     )
     return {
         "system_box": system_box,
@@ -579,7 +621,14 @@ def _build_validation_tab(language: gr.State) -> dict:
     save_val_btn.click(
         save_validation,
         inputs=[idx_state, slot_state, choice_radio, language],
-        outputs=save_val_status,
+        outputs=[
+            idx_state,
+            slot_state,
+            current_prompt,
+            choice_radio,
+            load_status,
+            save_val_status,
+        ],
     )
     return {
         "load_status": load_status,

@@ -75,6 +75,7 @@ def _vote(username: str, choice: str) -> dict:
 # every tab in the app has something to display on first launch.
 DUMMY_PROMPTS = [
     {
+        "id": 1,
         "username": "mariagrandury",
         "language": "es",
         "country": "es",
@@ -92,6 +93,7 @@ DUMMY_PROMPTS = [
         "answer_chosen_3": dict(EMPTY_VOTE),
     },
     {
+        "id": 2,
         "username": "alice-cl",
         "language": "es",
         "country": "cl",
@@ -109,6 +111,7 @@ DUMMY_PROMPTS = [
         "answer_chosen_3": dict(EMPTY_VOTE),
     },
     {
+        "id": 3,
         "username": "bruno-br",
         "language": "pt",
         "country": "br",
@@ -132,6 +135,7 @@ DUMMY_PROMPTS = [
         "answer_chosen_3": dict(EMPTY_VOTE),
     },
     {
+        "id": 4,
         "username": "carla-co",
         "language": "es",
         "country": "co",
