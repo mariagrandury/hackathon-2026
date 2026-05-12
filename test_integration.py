@@ -317,11 +317,8 @@ def test_merged_display():
 
     merged = app._merged_prompt_display("en", "be brief", "what time is it?")
     check(
-        "non-empty system_prompt → labelled merge",
-        "[System prompt]" in merged
-        and "[Prompt]" in merged
-        and "be brief" in merged
-        and "what time is it?" in merged,
+        "non-empty system_prompt → no headers, just blank line between",
+        merged == "be brief\n\nwhat time is it?",
         merged.replace("\n", "⏎"),
     )
 
