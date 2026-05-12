@@ -78,12 +78,17 @@ T: dict[str, dict[str, str]] = {
         "load_first": "Load a prompt first.",
         "out_of_range": "Prompt index out of range — try loading a new one.",
         # Writing
+        "writing_system_label": "System prompt (optional)",
+        "writing_system_placeholder": 'Steering instructions for the model, e.g. "Respond in Spanish without inventing data."',
         "writing_prompt_label": "Your prompt",
         "writing_prompt_placeholder": "Write a culturally-grounded prompt…",
         "writing_save_button": "Save",
         "writing_empty": "Prompt cannot be empty.",
         "writing_not_participant": "User `{username}` is not registered as a hackathon participant. Ask the organisers to add you.",
         "writing_saved": "Prompt saved. Thanks!",
+        # Merged display (validation + voting tabs)
+        "merged_system_header": "System prompt",
+        "merged_prompt_header": "Prompt",
         # Validation
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
@@ -149,12 +154,17 @@ T: dict[str, dict[str, str]] = {
         "load_first": "Carga un prompt primero.",
         "out_of_range": "Índice de prompt fuera de rango — intenta cargar uno nuevo.",
         # Writing
+        "writing_system_label": "System prompt",
+        "writing_system_placeholder": 'Instrucciones para el modelo, p. ej. "Responde en español sin inventar datos."',
         "writing_prompt_label": "Tu prompt",
         "writing_prompt_placeholder": "Escribe un prompt con base cultural…",
         "writing_save_button": "Guardar",
         "writing_empty": "El prompt no puede estar vacío.",
         "writing_not_participant": "El usuario `{username}` no está registrado como participante del hackathon. Pide a los organizadores que te añadan.",
         "writing_saved": "Prompt guardado. ¡Gracias!",
+        # Merged display (validation + voting tabs)
+        "merged_system_header": "System prompt",
+        "merged_prompt_header": "Prompt",
         # Validation
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
@@ -220,12 +230,17 @@ T: dict[str, dict[str, str]] = {
         "load_first": "Carregue um prompt primeiro.",
         "out_of_range": "Índice do prompt fora do intervalo — tente carregar um novo.",
         # Writing
+        "writing_system_label": "Mensagem de sistema (opcional)",
+        "writing_system_placeholder": 'Instruções para o modelo, p. ex. "Responda em português sem inventar dados."',
         "writing_prompt_label": "Seu prompt",
         "writing_prompt_placeholder": "Escreva um prompt culturalmente fundamentado…",
         "writing_save_button": "Salvar",
         "writing_empty": "O prompt não pode estar vazio.",
         "writing_not_participant": "O usuário `{username}` não está registrado como participante do hackathon. Peça aos organizadores para adicioná-lo.",
         "writing_saved": "Prompt salvo. Obrigado!",
+        # Merged display (validation + voting tabs)
+        "merged_system_header": "Mensagem de sistema",
+        "merged_prompt_header": "Prompt",
         # Validation
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
@@ -301,13 +316,32 @@ def show_user(lang: str, profile: gr.OAuthProfile | None) -> str:
     return s["logged_in_as"].format(username=profile.username)
 
 
+def _merged_prompt_display(lang: str, system_prompt: str, prompt: str) -> str:
+    """Format ``(system_prompt, prompt)`` for a single read-only textbox.
+
+    Used by the validation and voting tabs (the user asked for those to be
+    merged into one cell). If ``system_prompt`` is empty, the prompt is
+    returned alone so we don't render a useless empty section."""
+    sm = (system_prompt or "").strip()
+    p = (prompt or "").strip()
+    if not sm:
+        return p
+    s = _t(lang)
+    return (
+        f"[{s['merged_system_header']}]\n{sm}\n\n" f"[{s['merged_prompt_header']}]\n{p}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Prompt writing
 # ---------------------------------------------------------------------------
 
 
 def save_prompt(
-    prompt: str, lang: str, profile: gr.OAuthProfile | None
+    system_prompt: str,
+    prompt: str,
+    lang: str,
+    profile: gr.OAuthProfile | None,
 ) -> str:
     s = _t(lang)
     if profile is None:
@@ -323,6 +357,7 @@ def save_prompt(
         "username": profile.username,
         "language": info["language"],
         "country": info["country"],
+        "system_prompt": (system_prompt or "").strip(),
         "prompt": prompt.strip(),
         "prompt_validation_1": dict(EMPTY_VALIDATION),
         "prompt_validation_2": dict(EMPTY_VALIDATION),
@@ -362,10 +397,15 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
             continue
         for i in (1, 2, 3):
             if not row[f"prompt_validation_{i}"]["username"]:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
                 return (
                     int(idx),
                     i,
-                    row["prompt"],
+                    display,
                     s["validation_in_progress"].format(idx=int(idx), i=i),
                 )
     return -1, -1, "", s["validation_no_more"]
@@ -415,16 +455,20 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
         if not is_fully_validated(row) or not has_answers(row):
             continue
         if any(
-            row[f"answer_chosen_{i}"]["username"] == profile.username
-            for i in (1, 2, 3)
+            row[f"answer_chosen_{i}"]["username"] == profile.username for i in (1, 2, 3)
         ):
             continue
         for i in (1, 2, 3):
             if not row[f"answer_chosen_{i}"]["username"]:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
                 return (
                     int(idx),
                     i,
-                    row["prompt"],
+                    display,
                     row["answer_a"],
                     row["answer_b"],
                     s["voting_in_progress"].format(idx=int(idx), i=i),
@@ -443,12 +487,7 @@ def save_vote(
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
-    if (
-        idx is None
-        or idx < 0
-        or slot not in (1, 2, 3)
-        or choice not in VOTE_CHOICES
-    ):
+    if idx is None or idx < 0 or slot not in (1, 2, 3) or choice not in VOTE_CHOICES:
         return -1, -1, "", "", "", s["load_first"]
     df = load_prompts_df()
     if idx >= len(df):
@@ -468,9 +507,7 @@ def _vote_handler(choice: str):
     annotation — Gradio only auto-injects the profile when it sees the
     annotation on the function signature."""
 
-    def handler(
-        idx: int, slot: int, lang: str, profile: gr.OAuthProfile | None
-    ):
+    def handler(idx: int, slot: int, lang: str, profile: gr.OAuthProfile | None):
         return save_vote(idx, slot, choice, lang, profile)
 
     return handler
@@ -483,6 +520,11 @@ def _vote_handler(choice: str):
 
 def _build_writing_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
+    system_box = gr.Textbox(
+        label=s["writing_system_label"],
+        lines=2,
+        placeholder=s["writing_system_placeholder"],
+    )
     prompt_box = gr.Textbox(
         label=s["writing_prompt_label"],
         lines=5,
@@ -491,9 +533,12 @@ def _build_writing_tab(language: gr.State) -> dict:
     save_btn = gr.Button(s["writing_save_button"], variant="primary")
     save_status = gr.Markdown()
     save_btn.click(
-        save_prompt, inputs=[prompt_box, language], outputs=save_status
+        save_prompt,
+        inputs=[system_box, prompt_box, language],
+        outputs=save_status,
     )
     return {
+        "system_box": system_box,
         "prompt_box": prompt_box,
         "save_btn": save_btn,
         "save_status": save_status,
@@ -523,9 +568,7 @@ def _build_validation_tab(language: gr.State) -> dict:
     )
     with gr.Row():
         load_btn = gr.Button(s["validation_load_button"])
-        save_val_btn = gr.Button(
-            s["validation_save_button"], variant="primary"
-        )
+        save_val_btn = gr.Button(s["validation_save_button"], variant="primary")
     save_val_status = gr.Markdown()
 
     load_btn.click(
@@ -557,12 +600,8 @@ def _build_voting_tab(language: gr.State) -> dict:
         label=s["voting_prompt_label"], lines=4, interactive=False
     )
     with gr.Row():
-        ans_a = gr.Textbox(
-            label=s["voting_answer_a_label"], lines=8, interactive=False
-        )
-        ans_b = gr.Textbox(
-            label=s["voting_answer_b_label"], lines=8, interactive=False
-        )
+        ans_a = gr.Textbox(label=s["voting_answer_a_label"], lines=8, interactive=False)
+        ans_b = gr.Textbox(label=s["voting_answer_b_label"], lines=8, interactive=False)
     with gr.Row():
         load_btn = gr.Button(s["voting_load_button"])
         a_btn = gr.Button(s["voting_a_button"], variant="primary")
@@ -578,9 +617,7 @@ def _build_voting_tab(language: gr.State) -> dict:
         ans_b,
         status_md,
     ]
-    load_btn.click(
-        fetch_next_voting, inputs=[language], outputs=fetch_outputs
-    )
+    load_btn.click(fetch_next_voting, inputs=[language], outputs=fetch_outputs)
     for btn, choice in (
         (a_btn, "a"),
         (b_btn, "b"),
@@ -704,9 +741,7 @@ def _country_color_map(lang: str) -> dict[str, str]:
 
 def _build_leaderboard_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
-    refresh_btn = gr.Button(
-        s["leaderboard_refresh_button"], variant="secondary"
-    )
+    refresh_btn = gr.Button(s["leaderboard_refresh_button"], variant="secondary")
     # Provide an empty DataFrame with the expected columns as initial value.
     # gr.BarPlot referring to columns that don't exist in ``value`` produces a
     # malformed Vega-Lite spec that crashes the client-side renderer and
@@ -740,9 +775,7 @@ def _build_leaderboard_tab(language: gr.State) -> dict:
         height=320,
     )
     outputs = [user_plot, ranking, country_plot]
-    refresh_btn.click(
-        refresh_leaderboard, inputs=[language], outputs=outputs
-    )
+    refresh_btn.click(refresh_leaderboard, inputs=[language], outputs=outputs)
     return {
         "refresh_btn": refresh_btn,
         "user_plot": user_plot,
@@ -796,6 +829,10 @@ def init_ui(profile: gr.OAuthProfile | None):
         gr.update(value=_read_guidelines(lang)),
         # Writing
         gr.update(
+            label=s["writing_system_label"],
+            placeholder=s["writing_system_placeholder"],
+        ),
+        gr.update(
             label=s["writing_prompt_label"],
             placeholder=s["writing_prompt_placeholder"],
         ),
@@ -826,9 +863,7 @@ def init_ui(profile: gr.OAuthProfile | None):
         # the client-side Vega renderer and freeze the whole UI.
         gr.update(value=s["leaderboard_refresh_button"]),
         gr.update(
-            label=s["leaderboard_user_plot_label"].format(
-                goal=LEADERBOARD_GOAL
-            ),
+            label=s["leaderboard_user_plot_label"].format(goal=LEADERBOARD_GOAL),
         ),
         gr.update(label=s["leaderboard_ranking_label"]),
         gr.update(label=s["leaderboard_country_plot_label"]),
@@ -895,6 +930,7 @@ def build_demo() -> gr.Blocks:
                 tab_voting,
                 tab_leaderboard,
                 guidelines_md,
+                writing["system_box"],
                 writing["prompt_box"],
                 writing["save_btn"],
                 validation["load_status"],

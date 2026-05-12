@@ -41,6 +41,9 @@ PROMPTS_FEATURES = Features(
         "username": Value("string"),
         "language": Value("string"),
         "country": Value("string"),
+        # Optional LLM-steering preamble shown to annotators alongside the
+        # prompt. Empty string when the prompt is self-contained.
+        "system_prompt": Value("string"),
         "prompt": Value("string"),
         "prompt_validation_1": VALIDATION_STRUCT,
         "prompt_validation_2": VALIDATION_STRUCT,
@@ -57,9 +60,7 @@ PROMPTS_FEATURES = Features(
 
 
 def load_participants_df() -> pd.DataFrame:
-    return load_dataset(
-        PARTICIPANTS_REPO, split="train", token=HF_TOKEN
-    ).to_pandas()
+    return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
 def load_prompts_df() -> pd.DataFrame:
@@ -81,10 +82,7 @@ def participant_info(username: str) -> Optional[dict]:
 
 
 def is_fully_validated(row) -> bool:
-    return all(
-        row[f"prompt_validation_{i}"]["choice"] == "relevant"
-        for i in (1, 2, 3)
-    )
+    return all(row[f"prompt_validation_{i}"]["choice"] == "relevant" for i in (1, 2, 3))
 
 
 def has_answers(row) -> bool:
@@ -129,16 +127,9 @@ def user_stats(username: str, df: pd.DataFrame) -> dict:
         return {"sent": 0, "validated": 0, "voted": 0}
     sent = int((df["username"] == username).sum())
     validated = int(
-        sum(
-            (df[col].str["username"] == username).sum()
-            for col in VALIDATION_COLS
-        )
+        sum((df[col].str["username"] == username).sum() for col in VALIDATION_COLS)
     )
-    voted = int(
-        sum(
-            (df[col].str["username"] == username).sum() for col in VOTE_COLS
-        )
-    )
+    voted = int(sum((df[col].str["username"] == username).sum() for col in VOTE_COLS))
     return {"sent": sent, "validated": validated, "voted": voted}
 
 

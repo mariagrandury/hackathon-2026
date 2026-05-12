@@ -23,7 +23,6 @@ from data import (
     PROMPTS_REPO,
 )
 
-
 DUMMY_PARTICIPANTS = [
     {
         "username": "mariagrandury",
@@ -79,6 +78,7 @@ DUMMY_PROMPTS = [
         "username": "mariagrandury",
         "language": "es",
         "country": "es",
+        "system_prompt": "",
         "prompt": "¿Qué se suele cenar en Nochevieja en España?",
         "prompt_validation_1": dict(EMPTY_VALIDATION),
         "prompt_validation_2": dict(EMPTY_VALIDATION),
@@ -95,6 +95,7 @@ DUMMY_PROMPTS = [
         "username": "alice-cl",
         "language": "es",
         "country": "cl",
+        "system_prompt": "",
         "prompt": "¿Cuál es la diferencia entre 'once' y 'cena' en Chile?",
         "prompt_validation_1": _validation("bruno-br"),
         "prompt_validation_2": dict(EMPTY_VALIDATION),
@@ -111,6 +112,7 @@ DUMMY_PROMPTS = [
         "username": "bruno-br",
         "language": "pt",
         "country": "br",
+        "system_prompt": "",
         "prompt": "Qual é o prato típico do São João no Nordeste do Brasil?",
         "prompt_validation_1": _validation("alice-cl"),
         "prompt_validation_2": _validation("carla-co"),
@@ -133,6 +135,7 @@ DUMMY_PROMPTS = [
         "username": "carla-co",
         "language": "es",
         "country": "co",
+        "system_prompt": "",
         "prompt": "¿Qué se come tradicionalmente en una novena de Navidad en Colombia?",
         "prompt_validation_1": _validation("mariagrandury"),
         "prompt_validation_2": _validation("bruno-br"),
@@ -162,9 +165,7 @@ def main() -> None:
             "private repos before running this script."
         )
 
-    participants = Dataset.from_list(
-        DUMMY_PARTICIPANTS, features=PARTICIPANTS_FEATURES
-    )
+    participants = Dataset.from_list(DUMMY_PARTICIPANTS, features=PARTICIPANTS_FEATURES)
     participants.push_to_hub(PARTICIPANTS_REPO, private=True, token=token)
     print(f"Pushed {len(participants)} rows to {PARTICIPANTS_REPO}")
 
