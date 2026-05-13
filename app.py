@@ -24,15 +24,20 @@ a regular input and look up the right string in ``T``.
 
 from __future__ import annotations
 
+import logging
 import os
+import random
 
 import gradio as gr
 import pandas as pd
+
+log = logging.getLogger("hackathon")
 
 from data import (
     EMPTY_VALIDATION,
     EMPTY_VOTE,
     country_counts,
+    country_display,
     has_answers,
     is_fully_validated,
     load_prompts_df,
@@ -43,10 +48,28 @@ from data import (
 )
 
 VOTE_CHOICES = ("a", "b", "both", "none")
-VALIDATION_CHOICES = ("trivial", "stereotype", "unrelated", "relevant")
+# Three reject buckets followed by the four AlKhamissi et al. (2025) cultural
+# dimensions used as accept buckets. `data.is_fully_validated` treats any of
+# the four accept choices as a positive validation.
+VALIDATION_CHOICES = (
+    "trivial",
+    "stereotype",
+    "unrelated",
+    "knowledge",
+    "preference",
+    "dynamics",
+    "bias_probe",
+)
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
+IMAGES_DIR = "images"
+
+# Register ``images/`` as a static directory so the guidelines Markdown can
+# embed local infographics via ``/file=images/...`` URLs. Without this,
+# Gradio's ``/file=`` route refuses the request and the browser only
+# renders the alt text.
+gr.set_static_paths([IMAGES_DIR])
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +78,7 @@ GUIDELINES_DIR = "guidelines"
 
 T: dict[str, dict[str, str]] = {
     "en": {
-        "title": "# Hackathon 2026 — Cultural Preferences",
+        "title": "# Hackathon SomosNLP 2026: Cultural Preferences Challenge",
         "login_button": "Sign in with Hugging Face",
         "not_logged_in": "Not logged in. Click **Sign in with Hugging Face** to start.",
         "not_logged_in_short": "Not logged in.",
@@ -71,6 +94,13 @@ T: dict[str, dict[str, str]] = {
         "load_first": "Load a prompt first.",
         "out_of_range": "Prompt index out of range — try loading a new one.",
         # Writing
+        "writing_system_label": "System prompt (optional)",
+        "writing_system_placeholder": 'Steering instructions for the model, e.g. "Respond in Spanish without inventing data."',
+        # Used both as the placeholder shown when the system_prompt box is
+        # empty AND as the value substituted in if the user clicks Save
+        # without filling it in. ``{country}`` is interpolated with the
+        # display name of the user's country.
+        "default_system_prompt": "You are a person from {country}. Respond in Spanish concisely.",
         "writing_prompt_label": "Your prompt",
         "writing_prompt_placeholder": "Write a culturally-grounded prompt…",
         "writing_save_button": "Save",
@@ -81,14 +111,17 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
         "validation_choice_label": "How would you classify this prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Stereotyping / non-neutral",
-        "validation_choice_unrelated": "Unrelated to any country's culture",
-        "validation_choice_relevant": "Relevant for understanding a country's culture",
-        "validation_choice_required": "Pick one of the four options before saving.",
+        "validation_choice_trivial": "Trivial / factual (reject)",
+        "validation_choice_stereotype": "Reproduces a stereotype (reject)",
+        "validation_choice_unrelated": "Not culturally grounded in the country (reject)",
+        "validation_choice_knowledge": "Cultural knowledge (accept)",
+        "validation_choice_preference": "Cultural preference / norm (accept)",
+        "validation_choice_dynamics": "Cultural dynamics / interaction (accept)",
+        "validation_choice_bias_probe": "Bias probe: neutral prompt that surfaces stereotypes (accept)",
+        "validation_choice_required": "Pick one of the seven options before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
-        "validation_in_progress": "Validating prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validating prompt #{id} ({country}).",
         "validation_no_more": "No more prompts available for validation right now.",
         "validation_saved": "Validation saved.",
         # Voting
@@ -101,7 +134,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B is better",
         "voting_both_button": "Both good",
         "voting_none_button": "No good",
-        "voting_in_progress": "Voting on prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Voting on prompt #{id} ({country}).",
         "voting_no_more": "No more validated prompts available for voting right now.",
         # Leaderboard
         "leaderboard_refresh_button": "Refresh",
@@ -126,7 +159,7 @@ T: dict[str, dict[str, str]] = {
         "ranking_col_voted": "answers voted",
     },
     "es": {
-        "title": "# Hackathon 2026 — Preferencias Culturales",
+        "title": "# Hackathon SomosNLP 2026: Reto Preferencias Culturales",
         "login_button": "Iniciar sesión con Hugging Face",
         "not_logged_in": "Sesión no iniciada. Haz clic en **Iniciar sesión con Hugging Face** para empezar.",
         "not_logged_in_short": "Sesión no iniciada.",
@@ -135,13 +168,16 @@ T: dict[str, dict[str, str]] = {
         "tab_writing": "Escribir prompts",
         "tab_validation": "Validar prompts",
         "tab_voting": "Votar respuestas",
-        "tab_leaderboard": "Clasificación",
+        "tab_leaderboard": "Ranking",
         "guidelines_missing": "Las pautas en este idioma todavía no están disponibles.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
         "load_first": "Carga un prompt primero.",
         "out_of_range": "Índice de prompt fuera de rango — intenta cargar uno nuevo.",
         # Writing
+        "writing_system_label": "System prompt",
+        "writing_system_placeholder": 'Instrucciones para el modelo, p. ej. "Responde en español sin inventar datos."',
+        "default_system_prompt": "Eres una persona de {country}. Responde en español de manera concisa.",
         "writing_prompt_label": "Tu prompt",
         "writing_prompt_placeholder": "Escribe un prompt con base cultural…",
         "writing_save_button": "Guardar",
@@ -152,14 +188,17 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
         "validation_choice_label": "¿Cómo clasificarías este prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Estereotipos / no neutral",
-        "validation_choice_unrelated": "No relacionado con la cultura de un país",
-        "validation_choice_relevant": "Relevante para comprender la cultura de un país",
-        "validation_choice_required": "Selecciona una de las cuatro opciones antes de guardar.",
+        "validation_choice_trivial": "Trivial / factual (rechazar)",
+        "validation_choice_stereotype": "Reproduce un estereotipo (rechazar)",
+        "validation_choice_unrelated": "Sin anclaje cultural en el país (rechazar)",
+        "validation_choice_knowledge": "Conocimiento cultural (aceptar)",
+        "validation_choice_preference": "Preferencia o norma cultural (aceptar)",
+        "validation_choice_dynamics": "Dinámica cultural /interacción (aceptar)",
+        "validation_choice_bias_probe": "Trampa de sesgo: prompt neutral que detecta estereotipos (aceptar)",
+        "validation_choice_required": "Selecciona una de las siete opciones antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
-        "validation_in_progress": "Validando el prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validando el prompt #{id} ({country}).",
         "validation_no_more": "No hay más prompts disponibles para validar ahora mismo.",
         "validation_saved": "Validación guardada.",
         # Voting
@@ -172,7 +211,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B es mejor",
         "voting_both_button": "Ambas buenas",
         "voting_none_button": "Ninguna buena",
-        "voting_in_progress": "Votando el prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Votando el prompt #{id} ({country}).",
         "voting_no_more": "No hay más prompts validados disponibles para votar ahora mismo.",
         # Leaderboard
         "leaderboard_refresh_button": "Actualizar",
@@ -197,7 +236,7 @@ T: dict[str, dict[str, str]] = {
         "ranking_col_voted": "respuestas votadas",
     },
     "pt": {
-        "title": "# Hackathon 2026 — Preferências Culturais",
+        "title": "# Hackathon SomosNLP 2026: Preferências Culturais",
         "login_button": "Entrar com o Hugging Face",
         "not_logged_in": "Sessão não iniciada. Clique em **Entrar com o Hugging Face** para começar.",
         "not_logged_in_short": "Sessão não iniciada.",
@@ -213,6 +252,9 @@ T: dict[str, dict[str, str]] = {
         "load_first": "Carregue um prompt primeiro.",
         "out_of_range": "Índice do prompt fora do intervalo — tente carregar um novo.",
         # Writing
+        "writing_system_label": "Mensagem de sistema (opcional)",
+        "writing_system_placeholder": 'Instruções para o modelo, p. ex. "Responda em português sem inventar dados."',
+        "default_system_prompt": "Você é uma pessoa de {country}. Responda em português de forma concisa.",
         "writing_prompt_label": "Seu prompt",
         "writing_prompt_placeholder": "Escreva um prompt culturalmente fundamentado…",
         "writing_save_button": "Salvar",
@@ -223,14 +265,17 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
         "validation_choice_label": "Como você classificaria este prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Estereótipos / não neutro",
-        "validation_choice_unrelated": "Não relacionado com a cultura de um país",
-        "validation_choice_relevant": "Relevante para compreender a cultura de um país",
-        "validation_choice_required": "Selecione uma das quatro opções antes de salvar.",
+        "validation_choice_trivial": "Trivial / factual (rejeitar)",
+        "validation_choice_stereotype": "Reproduz / induz um estereótipo (rejeitar)",
+        "validation_choice_unrelated": "Sem ancoragem cultural no país (rejeitar)",
+        "validation_choice_knowledge": "Conhecimento cultural (aceitar)",
+        "validation_choice_preference": "Preferência ou norma cultural (aceitar)",
+        "validation_choice_dynamics": "Dinâmica cultural / interação (aceitar)",
+        "validation_choice_bias_probe": "Sonda de viés: prompt neutro que detecta estereótipos (aceitar)",
+        "validation_choice_required": "Selecione uma das sete opções antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
-        "validation_in_progress": "Validando o prompt #{idx} (slot {i}).",
+        "validation_in_progress": "Validando o prompt #{id} ({country}).",
         "validation_no_more": "Não há mais prompts disponíveis para validação no momento.",
         "validation_saved": "Validação salva.",
         # Voting
@@ -243,7 +288,7 @@ T: dict[str, dict[str, str]] = {
         "voting_b_button": "B é melhor",
         "voting_both_button": "Ambas boas",
         "voting_none_button": "Nenhuma boa",
-        "voting_in_progress": "Votando no prompt #{idx} (slot {i}).",
+        "voting_in_progress": "Votando no prompt #{id} ({country}).",
         "voting_no_more": "Não há mais prompts validados disponíveis para votação no momento.",
         # Leaderboard
         "leaderboard_refresh_button": "Atualizar",
@@ -294,28 +339,80 @@ def show_user(lang: str, profile: gr.OAuthProfile | None) -> str:
     return s["logged_in_as"].format(username=profile.username)
 
 
+def _default_system_prompt(lang: str, country_code: str | None) -> str:
+    """The text used as the placeholder of the writing-tab system_prompt box,
+    and substituted into the saved row when the user leaves it blank.
+
+    Returns "" if we can't resolve a country (logged-out / non-participant
+    user) — falling back to the generic placeholder string from the
+    translations is the caller's job."""
+    if not country_code:
+        return ""
+    template = _t(lang)["default_system_prompt"]
+    return template.format(country=country_display(country_code))
+
+
+def _merged_prompt_display(lang: str, system_prompt: str, prompt: str) -> str:
+    """Format ``(system_prompt, prompt)`` for a single read-only textbox.
+
+    Used by the validation and voting tabs (the user asked for those to be
+    merged into one cell). Just two paragraphs separated by a blank line —
+    no ``[System prompt]`` / ``[Prompt]`` headers (the visual separation is
+    enough; the ``lang`` argument is kept for API stability)."""
+    del lang  # no longer needed; kept for callers
+    sm = (system_prompt or "").strip()
+    p = (prompt or "").strip()
+    if not sm:
+        return p
+    return f"{sm}\n\n{p}"
+
+
 # ---------------------------------------------------------------------------
 # Prompt writing
 # ---------------------------------------------------------------------------
 
 
 def save_prompt(
-    prompt: str, lang: str, profile: gr.OAuthProfile | None
-) -> str:
+    system_prompt: str,
+    prompt: str,
+    lang: str,
+    profile: gr.OAuthProfile | None,
+):
+    """Append a new prompt and clear the textboxes on success.
+
+    Returns ``(status, system_box_update, prompt_box_update)``. On failure
+    the textboxes are left untouched (``gr.update()`` with no args), so the
+    user can fix the issue and re-submit. On success both clear, which is
+    the unambiguous "your text actually went through" cue."""
     s = _t(lang)
+    keep = gr.update()  # leave textbox value as-is
     if profile is None:
-        return s["login_required"]
+        return s["login_required"], keep, keep
     if not prompt or not prompt.strip():
-        return s["writing_empty"]
+        return s["writing_empty"], keep, keep
     info = participant_info(profile.username)
     if info is None:
-        return s["writing_not_participant"].format(username=profile.username)
+        return (
+            s["writing_not_participant"].format(username=profile.username),
+            keep,
+            keep,
+        )
 
     df = load_prompts_df()
+    next_id = int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
+    # If the user left the system_prompt blank, fill it in with the
+    # country-aware default ("Eres un asistente de IA de {country}…") —
+    # matches the gray placeholder shown in the textbox so the saved value
+    # is exactly what the user "sees" before typing.
+    sys_text = (system_prompt or "").strip()
+    if not sys_text:
+        sys_text = _default_system_prompt(lang, info.get("country"))
     new_row = {
+        "id": next_id,
         "username": profile.username,
         "language": info["language"],
         "country": info["country"],
+        "system_prompt": sys_text,
         "prompt": prompt.strip(),
         "prompt_validation_1": dict(EMPTY_VALIDATION),
         "prompt_validation_2": dict(EMPTY_VALIDATION),
@@ -329,8 +426,15 @@ def save_prompt(
         "answer_chosen_3": dict(EMPTY_VOTE),
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    push_prompts_df(df)
-    return s["writing_saved"]
+    push_prompts_df(
+        df,
+        commit_message=f"{profile.username} sent prompt with ID {next_id}",
+    )
+    return (
+        s["writing_saved"],
+        gr.update(value=""),  # clear system_box
+        gr.update(value=""),  # clear prompt_box
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -340,12 +444,27 @@ def save_prompt(
 
 def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt_text, status)`` for the next prompt the
-    user can validate. ``idx == -1`` means nothing to do."""
+    user can validate. ``idx == -1`` means nothing to do.
+
+    Filters to the user's own country (only prompts grounded in their
+    culture are shown). Users with no registered country fall through and
+    see all prompts."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", s["login_required"]
+    info = participant_info(profile.username)
+    user_country = info.get("country") if info else None
     df = load_prompts_df()
-    for idx, row in df.iterrows():
+    # Randomize iteration order so two users hitting "Load next" at the
+    # same time aren't both handed the very first eligible row, and so a
+    # single user clicking "Load next" right after a save doesn't keep
+    # seeing the same neighbouring prompts.
+    indices = list(df.index)
+    random.shuffle(indices)
+    for idx in indices:
+        row = df.loc[idx]
+        if user_country and row.get("country") != user_country:
+            continue
         if row["username"] == profile.username:
             continue
         if any(
@@ -355,11 +474,20 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
             continue
         for i in (1, 2, 3):
             if not row[f"prompt_validation_{i}"]["username"]:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
+                prompt_id = int(row.get("id", idx))
                 return (
                     int(idx),
                     i,
-                    row["prompt"],
-                    s["validation_in_progress"].format(idx=int(idx), i=i),
+                    display,
+                    s["validation_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
                 )
     return -1, -1, "", s["validation_no_more"]
 
@@ -370,23 +498,64 @@ def save_validation(
     choice: str,
     lang: str,
     profile: gr.OAuthProfile | None,
-) -> str:
+):
+    """Record the validation, then auto-advance to the next prompt and
+    reset the choice radio.
+
+    Returns updates for ``(idx_state, slot_state, current_prompt,
+    choice_radio, load_status, save_status)``. On input-validation errors
+    the visible inputs are left untouched (``gr.update()``); on successful
+    save the next prompt is loaded and the radio cleared so the user has
+    an unambiguous cue that the previous validation went through."""
     s = _t(lang)
+    keep_state = (
+        gr.update(),  # idx_state
+        gr.update(),  # slot_state
+        gr.update(),  # current_prompt
+        gr.update(),  # choice_radio
+        gr.update(),  # load_status
+    )
     if profile is None:
-        return s["login_required"]
+        return (*keep_state, s["login_required"])
     if idx is None or idx < 0 or slot not in (1, 2, 3):
-        return s["load_first"]
+        return (*keep_state, s["load_first"])
     if choice not in VALIDATION_CHOICES:
-        return s["validation_choice_required"]
+        return (*keep_state, s["validation_choice_required"])
     df = load_prompts_df()
     if idx >= len(df):
-        return s["out_of_range"]
-    df.at[idx, f"prompt_validation_{slot}"] = {
-        "choice": choice,
-        "username": profile.username,
-    }
-    push_prompts_df(df)
-    return s["validation_saved"]
+        return (*keep_state, s["out_of_range"])
+
+    # Defensive: if this user is already a validator on this row (stale
+    # form, second browser tab, replayed request, etc.) swallow the
+    # duplicate silently — their intent is already fulfilled by the
+    # earlier save. Advance to the next prompt as if it had just landed.
+    already = any(
+        df.at[idx, f"prompt_validation_{i}"]["username"] == profile.username
+        for i in (1, 2, 3)
+    )
+    if already:
+        log.info("skipped double-validation: user=%s row=%d", profile.username, idx)
+    else:
+        df.at[idx, f"prompt_validation_{slot}"] = {
+            "choice": choice,
+            "username": profile.username,
+        }
+        prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
+        push_prompts_df(
+            df,
+            commit_message=f"{profile.username} validated prompt with ID {prompt_id}",
+        )
+
+    # Advance to the next prompt and reset the radio.
+    next_idx, next_slot, next_prompt, next_status = fetch_next_validation(lang, profile)
+    return (
+        next_idx,  # idx_state
+        next_slot,  # slot_state
+        next_prompt,  # current_prompt
+        gr.update(value=None),  # choice_radio reset
+        next_status,  # load_status
+        s["validation_saved"],  # save_status (same whether we wrote or skipped)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -398,29 +567,46 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt, answer_a, answer_b, status)`` for the next
     fully-validated prompt the user can vote on. ``idx == -1`` means nothing.
 
-    Users *can* vote on their own prompts (unlike validation).
-    """
+    Users *can* vote on their own prompts (unlike validation). Filters to
+    the user's own country — voters only judge cultural appropriateness of
+    answers grounded in their own culture."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
+    info = participant_info(profile.username)
+    user_country = info.get("country") if info else None
     df = load_prompts_df()
-    for idx, row in df.iterrows():
+    # Randomize iteration order — see note on fetch_next_validation.
+    indices = list(df.index)
+    random.shuffle(indices)
+    for idx in indices:
+        row = df.loc[idx]
+        if user_country and row.get("country") != user_country:
+            continue
         if not is_fully_validated(row) or not has_answers(row):
             continue
         if any(
-            row[f"answer_chosen_{i}"]["username"] == profile.username
-            for i in (1, 2, 3)
+            row[f"answer_chosen_{i}"]["username"] == profile.username for i in (1, 2, 3)
         ):
             continue
         for i in (1, 2, 3):
             if not row[f"answer_chosen_{i}"]["username"]:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
+                prompt_id = int(row.get("id", idx))
                 return (
                     int(idx),
                     i,
-                    row["prompt"],
+                    display,
                     row["answer_a"],
                     row["answer_b"],
-                    s["voting_in_progress"].format(idx=int(idx), i=i),
+                    s["voting_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
                 )
     return -1, -1, "", "", "", s["voting_no_more"]
 
@@ -436,12 +622,7 @@ def save_vote(
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
-    if (
-        idx is None
-        or idx < 0
-        or slot not in (1, 2, 3)
-        or choice not in VOTE_CHOICES
-    ):
+    if idx is None or idx < 0 or slot not in (1, 2, 3) or choice not in VOTE_CHOICES:
         return -1, -1, "", "", "", s["load_first"]
     df = load_prompts_df()
     if idx >= len(df):
@@ -450,7 +631,11 @@ def save_vote(
         "choice": choice,
         "username": profile.username,
     }
-    push_prompts_df(df)
+    prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
+    push_prompts_df(
+        df,
+        commit_message=f"{profile.username} voted prompt with ID {prompt_id}",
+    )
     return fetch_next_voting(lang, profile)
 
 
@@ -461,9 +646,7 @@ def _vote_handler(choice: str):
     annotation — Gradio only auto-injects the profile when it sees the
     annotation on the function signature."""
 
-    def handler(
-        idx: int, slot: int, lang: str, profile: gr.OAuthProfile | None
-    ):
+    def handler(idx: int, slot: int, lang: str, profile: gr.OAuthProfile | None):
         return save_vote(idx, slot, choice, lang, profile)
 
     return handler
@@ -476,6 +659,11 @@ def _vote_handler(choice: str):
 
 def _build_writing_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
+    system_box = gr.Textbox(
+        label=s["writing_system_label"],
+        lines=2,
+        placeholder=s["writing_system_placeholder"],
+    )
     prompt_box = gr.Textbox(
         label=s["writing_prompt_label"],
         lines=5,
@@ -484,9 +672,12 @@ def _build_writing_tab(language: gr.State) -> dict:
     save_btn = gr.Button(s["writing_save_button"], variant="primary")
     save_status = gr.Markdown()
     save_btn.click(
-        save_prompt, inputs=[prompt_box, language], outputs=save_status
+        save_prompt,
+        inputs=[system_box, prompt_box, language],
+        outputs=[save_status, system_box, prompt_box],
     )
     return {
+        "system_box": system_box,
         "prompt_box": prompt_box,
         "save_btn": save_btn,
         "save_status": save_status,
@@ -506,7 +697,7 @@ def _build_validation_tab(language: gr.State) -> dict:
     load_status = gr.Markdown(s["validation_load_status_initial"])
     current_prompt = gr.Textbox(
         label=s["validation_prompt_label"],
-        lines=5,
+        lines=8,
         interactive=False,
     )
     choice_radio = gr.Radio(
@@ -516,9 +707,7 @@ def _build_validation_tab(language: gr.State) -> dict:
     )
     with gr.Row():
         load_btn = gr.Button(s["validation_load_button"])
-        save_val_btn = gr.Button(
-            s["validation_save_button"], variant="primary"
-        )
+        save_val_btn = gr.Button(s["validation_save_button"], variant="primary")
     save_val_status = gr.Markdown()
 
     load_btn.click(
@@ -529,7 +718,14 @@ def _build_validation_tab(language: gr.State) -> dict:
     save_val_btn.click(
         save_validation,
         inputs=[idx_state, slot_state, choice_radio, language],
-        outputs=save_val_status,
+        outputs=[
+            idx_state,
+            slot_state,
+            current_prompt,
+            choice_radio,
+            load_status,
+            save_val_status,
+        ],
     )
     return {
         "load_status": load_status,
@@ -547,15 +743,11 @@ def _build_voting_tab(language: gr.State) -> dict:
     slot_state = gr.State(-1)
     status_md = gr.Markdown(s["voting_load_status_initial"])
     current_prompt = gr.Textbox(
-        label=s["voting_prompt_label"], lines=4, interactive=False
+        label=s["voting_prompt_label"], lines=8, interactive=False
     )
     with gr.Row():
-        ans_a = gr.Textbox(
-            label=s["voting_answer_a_label"], lines=8, interactive=False
-        )
-        ans_b = gr.Textbox(
-            label=s["voting_answer_b_label"], lines=8, interactive=False
-        )
+        ans_a = gr.Textbox(label=s["voting_answer_a_label"], lines=8, interactive=False)
+        ans_b = gr.Textbox(label=s["voting_answer_b_label"], lines=8, interactive=False)
     with gr.Row():
         load_btn = gr.Button(s["voting_load_button"])
         a_btn = gr.Button(s["voting_a_button"], variant="primary")
@@ -571,9 +763,7 @@ def _build_voting_tab(language: gr.State) -> dict:
         ans_b,
         status_md,
     ]
-    load_btn.click(
-        fetch_next_voting, inputs=[language], outputs=fetch_outputs
-    )
+    load_btn.click(fetch_next_voting, inputs=[language], outputs=fetch_outputs)
     for btn, choice in (
         (a_btn, "a"),
         (b_btn, "b"),
@@ -697,9 +887,7 @@ def _country_color_map(lang: str) -> dict[str, str]:
 
 def _build_leaderboard_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
-    refresh_btn = gr.Button(
-        s["leaderboard_refresh_button"], variant="secondary"
-    )
+    refresh_btn = gr.Button(s["leaderboard_refresh_button"], variant="secondary")
     # Provide an empty DataFrame with the expected columns as initial value.
     # gr.BarPlot referring to columns that don't exist in ``value`` produces a
     # malformed Vega-Lite spec that crashes the client-side renderer and
@@ -733,9 +921,7 @@ def _build_leaderboard_tab(language: gr.State) -> dict:
         height=320,
     )
     outputs = [user_plot, ranking, country_plot]
-    refresh_btn.click(
-        refresh_leaderboard, inputs=[language], outputs=outputs
-    )
+    refresh_btn.click(refresh_leaderboard, inputs=[language], outputs=outputs)
     return {
         "refresh_btn": refresh_btn,
         "user_plot": user_plot,
@@ -772,6 +958,12 @@ def init_ui(profile: gr.OAuthProfile | None):
     updates leaderboard labels."""
     lang = _resolve_language(profile)
     s = _t(lang)
+    # Country-aware placeholder for the system_prompt textbox — uses the
+    # actual default that will be substituted in if the user clicks Save
+    # without filling it in.
+    info = participant_info(profile.username) if profile else None
+    default_sys = _default_system_prompt(lang, info.get("country") if info else None)
+    sys_placeholder = default_sys or s["writing_system_placeholder"]
     return (
         # Language state (drives every subsequent handler)
         lang,
@@ -788,6 +980,10 @@ def init_ui(profile: gr.OAuthProfile | None):
         # Guidelines body
         gr.update(value=_read_guidelines(lang)),
         # Writing
+        gr.update(
+            label=s["writing_system_label"],
+            placeholder=sys_placeholder,
+        ),
         gr.update(
             label=s["writing_prompt_label"],
             placeholder=s["writing_prompt_placeholder"],
@@ -819,9 +1015,7 @@ def init_ui(profile: gr.OAuthProfile | None):
         # the client-side Vega renderer and freeze the whole UI.
         gr.update(value=s["leaderboard_refresh_button"]),
         gr.update(
-            label=s["leaderboard_user_plot_label"].format(
-                goal=LEADERBOARD_GOAL
-            ),
+            label=s["leaderboard_user_plot_label"].format(goal=LEADERBOARD_GOAL),
         ),
         gr.update(label=s["leaderboard_ranking_label"]),
         gr.update(label=s["leaderboard_country_plot_label"]),
@@ -845,7 +1039,14 @@ def build_demo() -> gr.Blocks:
         with gr.Tabs():
             tab_guidelines = gr.Tab(s["tab_guidelines"])
             with tab_guidelines:
-                guidelines_md = gr.Markdown(_read_guidelines(DEFAULT_LANG))
+                # ``sanitize_html=False`` lets the guidelines render the
+                # inline ``<img>`` (infographics) and ``<center><a>`` (CTA
+                # buttons) tags. The markdown is repo-controlled content,
+                # not user input, so disabling sanitization is safe.
+                guidelines_md = gr.Markdown(
+                    _read_guidelines(DEFAULT_LANG),
+                    sanitize_html=False,
+                )
             tab_writing = gr.Tab(s["tab_writing"])
             with tab_writing:
                 writing = _build_writing_tab(language)
@@ -881,6 +1082,7 @@ def build_demo() -> gr.Blocks:
                 tab_voting,
                 tab_leaderboard,
                 guidelines_md,
+                writing["system_box"],
                 writing["prompt_box"],
                 writing["save_btn"],
                 validation["load_status"],

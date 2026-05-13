@@ -24,6 +24,14 @@ HF_TOKEN = os.environ.get("HF_TOKEN")
 EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
 
+# Validation `choice` values that count as a positive validation. Mirrors the
+# four AlKhamissi et al. (2025) cultural dimensions used in the app's
+# validation radio (see `app.VALIDATION_CHOICES`). Reject buckets
+# (trivial / stereotype / unrelated) and the empty sentinel are excluded.
+ACCEPT_VALIDATION_CHOICES = frozenset(
+    {"knowledge", "preference", "dynamics", "bias_probe"}
+)
+
 VALIDATION_STRUCT = {"choice": Value("string"), "username": Value("string")}
 VOTE_STRUCT = {"choice": Value("string"), "username": Value("string")}
 
@@ -38,9 +46,16 @@ PARTICIPANTS_FEATURES = Features(
 
 PROMPTS_FEATURES = Features(
     {
+        # Stable, human-readable identifier (1-indexed, sequential). Used in
+        # the commit message of every save so the HF dataset's commit
+        # history doubles as an audit log.
+        "id": Value("int64"),
         "username": Value("string"),
         "language": Value("string"),
         "country": Value("string"),
+        # Optional LLM-steering preamble shown to annotators alongside the
+        # prompt. Empty string when the prompt is self-contained.
+        "system_prompt": Value("string"),
         "prompt": Value("string"),
         "prompt_validation_1": VALIDATION_STRUCT,
         "prompt_validation_2": VALIDATION_STRUCT,
@@ -55,21 +70,66 @@ PROMPTS_FEATURES = Features(
     }
 )
 
+# 2-letter ISO → display name for the country shown to annotators (in the
+# in-progress status messages). Falls back to the uppercase code if a
+# country isn't in the map.
+COUNTRY_DISPLAY_NAMES: dict[str, str] = {
+    "es": "España",
+    "cu": "Cuba",
+    "co": "Colombia",
+    "py": "Paraguay",
+    "ec": "Ecuador",
+    "cl": "Chile",
+    "pe": "Perú",
+    "mx": "México",
+    "ni": "Nicaragua",
+    "br": "Brasil",
+    "pt": "Portugal",
+    "us": "USA",
+    "ar": "Argentina",
+    "uy": "Uruguay",
+    "ve": "Venezuela",
+    "bo": "Bolivia",
+    "cr": "Costa Rica",
+    "do": "República Dominicana",
+    "gt": "Guatemala",
+    "hn": "Honduras",
+    "pa": "Panamá",
+    "pr": "Puerto Rico",
+    "sv": "El Salvador",
+}
+
+
+def country_display(code: str | None) -> str:
+    if not code:
+        return "?"
+    return COUNTRY_DISPLAY_NAMES.get(code, code.upper())
+
 
 def load_participants_df() -> pd.DataFrame:
-    return load_dataset(
-        PARTICIPANTS_REPO, split="train", token=HF_TOKEN
-    ).to_pandas()
+    return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
 def load_prompts_df() -> pd.DataFrame:
     return load_dataset(PROMPTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
-def push_prompts_df(df: pd.DataFrame) -> None:
+def push_prompts_df(
+    df: pd.DataFrame, commit_message: str | None = None
+) -> None:
+    """Push ``df`` to the prompts repo with an optional commit message.
+
+    Callers pass a per-action message like
+    ``"mariagrandury validated prompt with ID 42"`` so the HF repo's commit
+    history reads like an activity log (visible on huggingface.co)."""
     Dataset.from_pandas(
         df, preserve_index=False, features=PROMPTS_FEATURES
-    ).push_to_hub(PROMPTS_REPO, private=True, token=HF_TOKEN)
+    ).push_to_hub(
+        PROMPTS_REPO,
+        private=True,
+        token=HF_TOKEN,
+        commit_message=commit_message,
+    )
 
 
 def participant_info(username: str) -> Optional[dict]:
@@ -82,7 +142,7 @@ def participant_info(username: str) -> Optional[dict]:
 
 def is_fully_validated(row) -> bool:
     return all(
-        row[f"prompt_validation_{i}"]["choice"] == "relevant"
+        row[f"prompt_validation_{i}"]["choice"] in ACCEPT_VALIDATION_CHOICES
         for i in (1, 2, 3)
     )
 
@@ -116,9 +176,9 @@ def _voter_usernames(df: pd.DataFrame) -> pd.Series:
 def _fully_validated_mask(df: pd.DataFrame) -> pd.Series:
     """Vectorised equivalent of ``df.apply(is_fully_validated, axis=1)``."""
     return (
-        (df["prompt_validation_1"].str["choice"] == "relevant")
-        & (df["prompt_validation_2"].str["choice"] == "relevant")
-        & (df["prompt_validation_3"].str["choice"] == "relevant")
+        df["prompt_validation_1"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
+        & df["prompt_validation_2"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
+        & df["prompt_validation_3"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
     )
 
 
@@ -129,16 +189,9 @@ def user_stats(username: str, df: pd.DataFrame) -> dict:
         return {"sent": 0, "validated": 0, "voted": 0}
     sent = int((df["username"] == username).sum())
     validated = int(
-        sum(
-            (df[col].str["username"] == username).sum()
-            for col in VALIDATION_COLS
-        )
+        sum((df[col].str["username"] == username).sum() for col in VALIDATION_COLS)
     )
-    voted = int(
-        sum(
-            (df[col].str["username"] == username).sum() for col in VOTE_COLS
-        )
-    )
+    voted = int(sum((df[col].str["username"] == username).sum() for col in VOTE_COLS))
     return {"sent": sent, "validated": validated, "voted": voted}
 
 

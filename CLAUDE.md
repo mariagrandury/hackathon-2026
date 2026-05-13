@@ -22,7 +22,14 @@ answers. All state lives in two private datasets on the Hub.
   predicates (`is_fully_validated`, `has_answers`), and aggregations for the
   leaderboard (`user_stats`, `country_counts`, `ranking_df`).
 - **`seed_datasets.py`** — one-shot script that overwrites both private
-  datasets with dummy rows in the current schema.
+  datasets with dummy rows in the current schema. Used for local testing
+  without v0 data.
+- **`migrate_from_v0.py`** — one-shot script that pulls the 1328 prompts
+  from `mariagrandury/dataset-preferencias-v0` and writes them into
+  `cultural_preferences` in our schema (empty validation/vote slots,
+  random per-row A/B assignment so voters don't see a fixed correlation
+  with v0's chosen answer; model columns preserve which side was v0's
+  chosen vs rejected for offline analysis). Use this for the real run.
 - **`guidelines.md`** — placeholder annotation guidelines, rendered as the
   first tab.
 - **`requirements.txt`** — pins `gradio[oauth]==4.44.1`,
@@ -40,13 +47,21 @@ Both private, owned by `mariagrandury`. Schema is the source of truth in
 | `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`                                                                                                                                                                           |
 | `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}`                                                                       |
 
-`prompt_validation_i` is `{validated: bool, username: str}`. `answer_chosen_i`
-is `{choice: str, username: str}` where `choice ∈ {"a", "b", "both", "none"}`.
+Both `prompt_validation_i` and `answer_chosen_i` are `{choice: str, username: str}`.
+
+- `answer_chosen_i.choice ∈ {"a", "b", "both", "none"}`.
+- `prompt_validation_i.choice` is one of seven categories from the
+  `VALIDATION_CHOICES` tuple in `app.py`, organised as **3 reject buckets**
+  (`trivial`, `stereotype`, `unrelated`) and **4 accept buckets** that mirror
+  the [AlKhamissi et al. (2025)](https://arxiv.org/abs/2510.05931) cultural
+  dimensions: `knowledge`, `preference`, `dynamics`, `bias_probe`. The accept
+  set is exposed as `data.ACCEPT_VALIDATION_CHOICES` and is what
+  `is_fully_validated` checks against — a single reject from any of the three
+  validators keeps the prompt out of the voting pool.
 
 Convention for the `_i` slot columns: an empty `username` means "slot not
-filled". So `{validated: False, username: ""}` is "no one has validated this
-slot yet", whereas `{validated: False, username: "alice-cl"}` is "alice
-explicitly disagreed".
+filled". So `{choice: "", username: ""}` is "no one has touched this slot
+yet"; a slot with a reject-bucket choice is "validated as unfit".
 
 ## Behavioural rules
 
@@ -58,8 +73,8 @@ refactoring:
 - Validation slot picker skips prompts the user authored or already validated
   in any of the three slots.
 - Voting slot picker skips prompts that are not fully validated (all three
-  `prompt_validation_i.validated == True`), have no `answer_a`/`answer_b`, or
-  the user already voted in any of the three slots.
+  `prompt_validation_i.choice` in `ACCEPT_VALIDATION_CHOICES`), have no
+  `answer_a`/`answer_b`, or the user already voted in any of the three slots.
 - After a vote click, the next eligible prompt is loaded automatically (single
   click → save + advance).
 - Leaderboard is per logged-in user. The horizontal bar plot uses a fixed goal
@@ -109,11 +124,21 @@ username is in the participants seed (the default seed includes
 
 ## Deploying to Hugging Face Spaces
 
-1. Create a private Gradio Space named `mariagrandury/hackathon-2026`.
+The Space lives at `somosnlp-hackathon-2026/cultural-preferences` (private,
+Gradio SDK). Datasets stay under `mariagrandury/` — Space and dataset owners
+are intentionally different.
+
+1. Create a private Gradio Space at `somosnlp-hackathon-2026/cultural-preferences`.
+   Don't use the README template — first push from `deploy_to_space.sh`
+   should land cleanly without a merge.
 2. In the Space settings, add an `HF_TOKEN` secret with read+write access to
-   the two private datasets.
-3. Push this branch to the Space repo (the `README.md` front matter is the
-   Space config).
+   the two private `mariagrandury/...` datasets.
+3. Don't push this whole repo. The Space mirror is curated:
+   `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `requirements.txt`,
+   `README.md`, `guidelines/`, `images/` into a sibling clone of the Space repo
+   (default `../2026-space-cultural-preferences`). Commit + push from that clone.
+   `CLAUDE.md`, `seed_datasets.py`, `migrate_from_v0.py`, `test_integration.py`,
+   `data/`, `.env*` deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.
@@ -138,10 +163,11 @@ inside the Space because `hf_oauth: true` is set.
 - **Self-validation guard relies on `username` matching.** It has no
   case-folding or alias resolution — HF usernames are case-sensitive in
   practice.
-- **Empty-slot semantics.** `{validated: False, username: ""}` and
-  `{choice: "", username: ""}` are sentinels for "no one filled this yet".
-  Don't use truthiness on `validated`/`choice` alone — always check
-  `username`.
+- **Empty-slot semantics.** `{choice: "", username: ""}` is the sentinel for
+  "no one filled this yet". Don't use truthiness on `choice` alone — always
+  check `username` for slot occupancy, and check
+  `choice in ACCEPT_VALIDATION_CHOICES` (not `bool(choice)`) when deciding
+  whether a validation slot counts as positive.
 - **Leaderboard reads the whole dataset on every tab open.** The lazy-load
   on `tab.select` keeps it off page-load, but each open of the Leaderboard
   tab still pulls the full `cultural_preferences` table. Fine for a few
@@ -175,8 +201,12 @@ In rough priority order:
 4. **Per-(language, country) quotas.** A dashboard for organisers showing
    gaps to fill, plus enforcement on `Save prompt` so the dataset stays
    balanced.
-5. **Real annotation guidelines.** Replace `guidelines.md`, possibly with a
-   versioned per-language variant.
+5. **Translate the new guidelines.** `guidelines/guidelines_es.md` was
+   rewritten around the [AlKhamissi et al. (2025)](https://arxiv.org/abs/2510.05931)
+   four-dimension taxonomy (knowledge / preference / dynamics / bias-probe),
+   the seven-tag validation flow and per-dimension voting criteria. The PT
+   and EN guideline files still need the same treatment — only the radio
+   labels in `T` are localized so the app doesn't crash.
 6. **Better empty-state UX.** When a tab has nothing to show (e.g. no more
    prompts to validate, leaderboard before login), the message is plain
    markdown — could be a friendlier empty state with a CTA pointing to the
