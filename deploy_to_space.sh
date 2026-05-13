@@ -33,10 +33,12 @@ fi
 PATHS=(
   app.py
   data.py
+  test_data.py
   requirements.txt
   README.md
   guidelines
   images
+  data/test-2026.json
 )
 
 echo "Syncing runtime files into $SPACE_DIR"
@@ -52,6 +54,9 @@ for p in "${PATHS[@]}"; do
     mkdir -p "$SPACE_DIR/$p"
     rsync -a --delete "$src/" "$SPACE_DIR/$p/"
   else
+    # Ensure the destination's parent directory exists (e.g. for
+    # ``data/test-2026.json`` we need ``data/`` on the Space side).
+    mkdir -p "$(dirname "$SPACE_DIR/$p")"
     rsync -a "$src" "$SPACE_DIR/$p"
   fi
   echo "  [ok]   $p"

@@ -36,6 +36,8 @@ log = logging.getLogger("hackathon")
 from data import (
     EMPTY_VALIDATION,
     EMPTY_VOTE,
+    TEST_PASS_THRESHOLD,
+    best_test_score,
     country_counts,
     country_display,
     has_answers,
@@ -44,8 +46,11 @@ from data import (
     participant_info,
     push_prompts_df,
     ranking_df,
+    record_test_attempt,
     user_stats,
 )
+from test_data import grade as grade_test
+from test_data import load_questions as load_test_questions
 
 VOTE_CHOICES = ("a", "b", "both", "none")
 # Validation buckets: three reject buckets and the four AlKhamissi et al.
@@ -67,6 +72,11 @@ APP_CSS = (
     ".validation-choices .wrap { flex-direction: column; align-items: flex-start; }"
 )
 
+# Fixed-size pool of radio components for the test tab. The tab populates
+# the first N at runtime from the current language's question bank and
+# hides the rest. Keep this >= the longest per-language test.
+MAX_TEST_QUESTIONS = 30
+
 # Register ``images/`` as a static directory so the guidelines Markdown can
 # embed local infographics via ``/file=images/...`` URLs. Without this,
 # Gradio's ``/file=`` route refuses the request and the browser only
@@ -86,11 +96,25 @@ T: dict[str, dict[str, str]] = {
         "not_logged_in_short": "Not logged in.",
         "logged_in_as": "Logged in as **{username}**.",
         "tab_guidelines": "Annotation Guidelines",
+        "tab_test": "Entry Test",
         "tab_writing": "Prompt Writing",
         "tab_validation": "Prompt Validation",
         "tab_voting": "Answer Voting",
         "tab_leaderboard": "Leaderboard",
         "guidelines_missing": "Guidelines for this language are not available yet.",
+        # Test
+        "test_intro": "Answer all questions, then click **Submit test**. You need **{threshold}%** correct to unlock the rest of the app. Unlimited retries — if you fail, reread the guidelines and try again.",
+        "test_login_required": "Please log in with Hugging Face to take the test.",
+        "test_not_participant": "User `{username}` is not registered as a hackathon participant. Ask the organisers to add you before taking the test.",
+        "test_no_questions": "No test is available for this language yet.",
+        "test_question_label": "Question {n}: {prompt}",
+        "test_submit_button": "Submit test",
+        "test_retake_button": "Take the test again",
+        "test_status_taken": "You scored **{percent}%** on attempt {attempt}. Pass mark is **{threshold}%**.",
+        "test_status_passed": "🎉 You scored **{percent}%** on attempt {attempt}. The Prompt Writing, Validation and Voting tabs are now unlocked.",
+        "test_status_failed": "You scored **{percent}%** on attempt {attempt}. You need **{threshold}%** to unlock the rest of the app. Reread the guidelines and take the test again.",
+        "test_status_unanswered": "Please answer every question before submitting.",
+        "test_status_best": "Your best score so far: **{percent}%**.",
         # Common
         "login_required": "Please log in with Hugging Face first.",
         "load_first": "Load a prompt first.",
@@ -169,11 +193,25 @@ T: dict[str, dict[str, str]] = {
         "not_logged_in_short": "Sesión no iniciada.",
         "logged_in_as": "Sesión iniciada como **{username}**.",
         "tab_guidelines": "Guía de anotación",
+        "tab_test": "Test de acceso",
         "tab_writing": "Escribir prompts",
         "tab_validation": "Validar prompts",
         "tab_voting": "Votar respuestas",
         "tab_leaderboard": "Ranking",
         "guidelines_missing": "La guía en este idioma todavía no están disponibles.",
+        # Test
+        "test_intro": "Responde a todas las preguntas y haz clic en **Enviar test**. Necesitas un **{threshold}%** de aciertos para desbloquear el resto de la aplicación. Puedes reintentarlo cuantas veces quieras — si suspendes, relee la guía y vuelve a intentarlo.",
+        "test_login_required": "Por favor, inicia sesión con Hugging Face para hacer el test.",
+        "test_not_participant": "El usuario `{username}` no está registrado como participante del hackathon. Pide a los organizadores que te añadan antes de hacer el test.",
+        "test_no_questions": "Todavía no hay un test disponible en este idioma.",
+        "test_question_label": "Pregunta {n}: {prompt}",
+        "test_submit_button": "Enviar test",
+        "test_retake_button": "Volver a hacer el test",
+        "test_status_taken": "Has obtenido un **{percent}%** en el intento {attempt}. Nota de corte: **{threshold}%**.",
+        "test_status_passed": "🎉 Has obtenido un **{percent}%** en el intento {attempt}. Las pestañas de Escribir, Validar y Votar ya están desbloqueadas.",
+        "test_status_failed": "Has obtenido un **{percent}%** en el intento {attempt}. Necesitas un **{threshold}%** para desbloquear el resto de la aplicación. Relee la guía y vuelve a intentarlo.",
+        "test_status_unanswered": "Por favor, responde a todas las preguntas antes de enviar el test.",
+        "test_status_best": "Tu mejor puntuación hasta ahora: **{percent}%**.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
         "load_first": "Carga un prompt primero.",
@@ -248,11 +286,25 @@ T: dict[str, dict[str, str]] = {
         "not_logged_in_short": "Sessão não iniciada.",
         "logged_in_as": "Sessão iniciada como **{username}**.",
         "tab_guidelines": "Diretrizes de anotação",
+        "tab_test": "Teste de acesso",
         "tab_writing": "Escrever prompts",
         "tab_validation": "Validar prompts",
         "tab_voting": "Votar respostas",
         "tab_leaderboard": "Classificação",
         "guidelines_missing": "As diretrizes neste idioma ainda não estão disponíveis.",
+        # Test
+        "test_intro": "Responda todas as perguntas e clique em **Enviar teste**. Você precisa de **{threshold}%** de acertos para desbloquear o resto da aplicação. Tentativas ilimitadas — se reprovar, releia as diretrizes e tente novamente.",
+        "test_login_required": "Por favor, entre com o Hugging Face para fazer o teste.",
+        "test_not_participant": "O usuário `{username}` não está registrado como participante do hackathon. Peça aos organizadores para adicioná-lo antes de fazer o teste.",
+        "test_no_questions": "Ainda não há um teste disponível neste idioma.",
+        "test_question_label": "Pergunta {n}: {prompt}",
+        "test_submit_button": "Enviar teste",
+        "test_retake_button": "Refazer o teste",
+        "test_status_taken": "Você obteve **{percent}%** na tentativa {attempt}. Nota de corte: **{threshold}%**.",
+        "test_status_passed": "🎉 Você obteve **{percent}%** na tentativa {attempt}. As abas Escrever, Validar e Votar foram desbloqueadas.",
+        "test_status_failed": "Você obteve **{percent}%** na tentativa {attempt}. Precisa de **{threshold}%** para desbloquear o resto da aplicação. Releia as diretrizes e tente novamente.",
+        "test_status_unanswered": "Por favor, responda todas as perguntas antes de enviar o teste.",
+        "test_status_best": "Sua melhor pontuação até agora: **{percent}%**.",
         # Common
         "login_required": "Por favor, entre com o Hugging Face primeiro.",
         "load_first": "Carregue um prompt primeiro.",
@@ -668,6 +720,198 @@ def _vote_handler(choice: str):
 
 
 # ---------------------------------------------------------------------------
+# Entry test
+# ---------------------------------------------------------------------------
+
+
+def _test_threshold_pct() -> int:
+    return int(round(TEST_PASS_THRESHOLD * 100))
+
+
+def _test_radio_choices(lang: str) -> list[tuple[str, str]]:
+    """All 7 validation buckets as `(label, value)` pairs for the entry test.
+
+    The test asks the user to classify a prompt into the same buckets as
+    the validation tab, but it's a single radio (no Reject/Accept split),
+    so we list all seven options together."""
+    s = _t(lang)
+    return [(s[f"validation_choice_{c}"], c) for c in VALIDATION_CHOICES]
+
+
+def _shuffle_questions(lang: str) -> list[dict]:
+    """Return a shuffled copy of the language's question bank."""
+    questions = list(load_test_questions(lang))
+    random.shuffle(questions)
+    return questions
+
+
+def _test_radio_updates(
+    questions: list[dict],
+    lang: str,
+    reset_values: bool,
+) -> list:
+    """Build ``MAX_TEST_QUESTIONS`` update dicts: visible+populated for the
+    questions in ``questions``, hidden for the rest. ``reset_values=True``
+    clears any previously selected answer (used on (re-)load); ``False``
+    leaves the chosen value alone (used after submit so the user can see
+    what they picked while reading the result)."""
+    s = _t(lang)
+    choices = _test_radio_choices(lang)
+    updates = []
+    for i in range(MAX_TEST_QUESTIONS):
+        if i < len(questions):
+            q = questions[i]
+            update = dict(
+                visible=True,
+                choices=choices,
+                label=s["test_question_label"].format(n=i + 1, prompt=q["prompt"]),
+            )
+            if reset_values:
+                update["value"] = None
+            updates.append(gr.update(**update))
+        else:
+            updates.append(gr.update(visible=False))
+    return updates
+
+
+def load_test(lang: str, profile: gr.OAuthProfile | None):
+    """Shuffle questions and return updates for the test UI.
+
+    Outputs (in order): ``questions_state``, ``intro_md``, ``status_md``,
+    ``submit_btn``, ``retake_btn``, then ``MAX_TEST_QUESTIONS`` radios.
+    """
+    s = _t(lang)
+    questions = _shuffle_questions(lang)
+    intro = s["test_intro"].format(threshold=_test_threshold_pct())
+    if not questions:
+        status = s["test_no_questions"]
+        return (
+            [],
+            gr.update(value=intro),
+            gr.update(value=status),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            *(gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)),
+        )
+    status_lines = []
+    if profile is not None:
+        best = best_test_score(profile.username)
+        if best > 0:
+            status_lines.append(
+                s["test_status_best"].format(percent=int(round(best * 100)))
+            )
+    status = "\n\n".join(status_lines)
+    return (
+        questions,
+        gr.update(value=intro),
+        gr.update(value=status),
+        gr.update(visible=True),
+        gr.update(visible=False),
+        *_test_radio_updates(questions, lang, reset_values=True),
+    )
+
+
+def submit_test(
+    questions: list[dict],
+    lang: str,
+    profile: gr.OAuthProfile | None,
+    *answers,
+):
+    """Grade the submitted answers, persist the score, and return UI updates.
+
+    Outputs (in order): ``status_md``, ``submit_btn``, ``retake_btn``,
+    ``tab_writing``, ``tab_validation``, ``tab_voting``.
+    """
+    s = _t(lang)
+    threshold_pct = _test_threshold_pct()
+    noop = (gr.update(), gr.update(), gr.update())  # tabs unchanged
+    if profile is None:
+        return (
+            gr.update(value=s["test_login_required"]),
+            gr.update(visible=True),
+            gr.update(visible=False),
+            *noop,
+        )
+    if not questions:
+        return (
+            gr.update(value=s["test_no_questions"]),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            *noop,
+        )
+    # Walk in question order — answers come positionally from the radio
+    # pool, so the i-th answer belongs to the i-th question.
+    paired = [(q["id"], answers[i]) for i, q in enumerate(questions)]
+    if any(value is None for _, value in paired):
+        return (
+            gr.update(value=s["test_status_unanswered"]),
+            gr.update(visible=True),
+            gr.update(visible=False),
+            *noop,
+        )
+    score, _correct, _total = grade_test(paired, lang)
+    try:
+        attempt = record_test_attempt(profile.username, score)
+    except LookupError:
+        return (
+            gr.update(value=s["test_not_participant"].format(username=profile.username)),
+            gr.update(visible=True),
+            gr.update(visible=False),
+            *noop,
+        )
+    percent = int(round(score * 100))
+    passed = score >= TEST_PASS_THRESHOLD
+    if passed:
+        status = s["test_status_passed"].format(percent=percent, attempt=attempt)
+    else:
+        status = s["test_status_failed"].format(
+            percent=percent, attempt=attempt, threshold=threshold_pct
+        )
+    # Reveal the gated tabs in response — the user doesn't need to reload
+    # the page to gain access after passing. We don't *hide* them on failure,
+    # because the user might have already passed on a previous attempt with
+    # a higher score; visibility for non-passers is set on page load.
+    tab_update = gr.update(visible=True) if passed else gr.update()
+    return (
+        gr.update(value=status),
+        gr.update(visible=False),
+        gr.update(visible=True),
+        tab_update,
+        tab_update,
+        tab_update,
+    )
+
+
+def _build_test_tab(language: gr.State) -> dict:
+    s = _t(DEFAULT_LANG)
+    intro_md = gr.Markdown(
+        s["test_intro"].format(threshold=_test_threshold_pct())
+    )
+    questions_state = gr.State([])
+    radios: list[gr.Radio] = []
+    for _ in range(MAX_TEST_QUESTIONS):
+        radios.append(
+            gr.Radio(
+                choices=_test_radio_choices(DEFAULT_LANG),
+                value=None,
+                visible=False,
+                interactive=True,
+            )
+        )
+    submit_btn = gr.Button(s["test_submit_button"], variant="primary", visible=False)
+    status_md = gr.Markdown()
+    retake_btn = gr.Button(s["test_retake_button"], visible=False)
+    return {
+        "intro_md": intro_md,
+        "questions_state": questions_state,
+        "radios": radios,
+        "submit_btn": submit_btn,
+        "status_md": status_md,
+        "retake_btn": retake_btn,
+    }
+
+
+# ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
 
@@ -1020,6 +1264,14 @@ def init_ui(profile: gr.OAuthProfile | None):
     info = participant_info(profile.username) if profile else None
     default_sys = _default_system_prompt(lang, info.get("country") if info else None)
     sys_placeholder = default_sys or s["writing_system_placeholder"]
+    # Gating: Writing / Validation / Voting only become available once the
+    # user has scored above ``TEST_PASS_THRESHOLD`` on the entry test.
+    passed = (
+        best_test_score(profile.username) >= TEST_PASS_THRESHOLD
+        if profile is not None
+        else False
+    )
+    test_state = load_test(lang, profile)
     return (
         # Language state (drives every subsequent handler)
         lang,
@@ -1027,14 +1279,17 @@ def init_ui(profile: gr.OAuthProfile | None):
         gr.update(value=s["title"]),
         gr.update(value=s["login_button"]),
         gr.update(value=show_user(lang, profile)),
-        # Tabs
+        # Tabs (gated tabs get visible=passed)
         gr.update(label=s["tab_guidelines"]),
-        gr.update(label=s["tab_writing"]),
-        gr.update(label=s["tab_validation"]),
-        gr.update(label=s["tab_voting"]),
+        gr.update(label=s["tab_test"]),
+        gr.update(label=s["tab_writing"], visible=passed),
+        gr.update(label=s["tab_validation"], visible=passed),
+        gr.update(label=s["tab_voting"], visible=passed),
         gr.update(label=s["tab_leaderboard"]),
         # Guidelines body
         gr.update(value=_read_guidelines(lang)),
+        # Test: questions_state, intro, status, submit_btn, retake_btn, *radios
+        *test_state,
         # Writing
         gr.update(
             label=s["writing_system_label"],
@@ -1109,13 +1364,17 @@ def build_demo() -> gr.Blocks:
                     _read_guidelines(DEFAULT_LANG),
                     sanitize_html=False,
                 )
-            tab_writing = gr.Tab(s["tab_writing"])
+            tab_test = gr.Tab(s["tab_test"])
+            with tab_test:
+                test_tab = _build_test_tab(language)
+            # Gated tabs — only visible once the user has passed the entry test.
+            tab_writing = gr.Tab(s["tab_writing"], visible=False)
             with tab_writing:
                 writing = _build_writing_tab(language)
-            tab_validation = gr.Tab(s["tab_validation"])
+            tab_validation = gr.Tab(s["tab_validation"], visible=False)
             with tab_validation:
                 validation = _build_validation_tab(language)
-            tab_voting = gr.Tab(s["tab_voting"])
+            tab_voting = gr.Tab(s["tab_voting"], visible=False)
             with tab_voting:
                 voting = _build_voting_tab(language)
             tab_leaderboard = gr.Tab(s["tab_leaderboard"])
@@ -1130,6 +1389,33 @@ def build_demo() -> gr.Blocks:
             outputs=leaderboard["outputs"],
         )
 
+        # Test handlers — Submit grades and toggles gated-tab visibility;
+        # Retake re-shuffles and resets the radios.
+        test_tab["submit_btn"].click(
+            submit_test,
+            inputs=[test_tab["questions_state"], language, *test_tab["radios"]],
+            outputs=[
+                test_tab["status_md"],
+                test_tab["submit_btn"],
+                test_tab["retake_btn"],
+                tab_writing,
+                tab_validation,
+                tab_voting,
+            ],
+        )
+        test_tab["retake_btn"].click(
+            load_test,
+            inputs=[language],
+            outputs=[
+                test_tab["questions_state"],
+                test_tab["intro_md"],
+                test_tab["status_md"],
+                test_tab["submit_btn"],
+                test_tab["retake_btn"],
+                *test_tab["radios"],
+            ],
+        )
+
         demo.load(
             init_ui,
             inputs=None,
@@ -1139,11 +1425,18 @@ def build_demo() -> gr.Blocks:
                 login_btn,
                 user_md,
                 tab_guidelines,
+                tab_test,
                 tab_writing,
                 tab_validation,
                 tab_voting,
                 tab_leaderboard,
                 guidelines_md,
+                test_tab["questions_state"],
+                test_tab["intro_md"],
+                test_tab["status_md"],
+                test_tab["submit_btn"],
+                test_tab["retake_btn"],
+                *test_tab["radios"],
                 writing["system_box"],
                 writing["prompt_box"],
                 writing["save_btn"],
