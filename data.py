@@ -24,6 +24,14 @@ HF_TOKEN = os.environ.get("HF_TOKEN")
 EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
 
+# Validation `choice` values that count as a positive validation. Mirrors the
+# four AlKhamissi et al. (2025) cultural dimensions used in the app's
+# validation radio (see `app.VALIDATION_CHOICES`). Reject buckets
+# (trivial / stereotype / unrelated) and the empty sentinel are excluded.
+ACCEPT_VALIDATION_CHOICES = frozenset(
+    {"knowledge", "preference", "dynamics", "bias_probe"}
+)
+
 VALIDATION_STRUCT = {"choice": Value("string"), "username": Value("string")}
 VOTE_STRUCT = {"choice": Value("string"), "username": Value("string")}
 
@@ -133,7 +141,10 @@ def participant_info(username: str) -> Optional[dict]:
 
 
 def is_fully_validated(row) -> bool:
-    return all(row[f"prompt_validation_{i}"]["choice"] == "relevant" for i in (1, 2, 3))
+    return all(
+        row[f"prompt_validation_{i}"]["choice"] in ACCEPT_VALIDATION_CHOICES
+        for i in (1, 2, 3)
+    )
 
 
 def has_answers(row) -> bool:
@@ -165,9 +176,9 @@ def _voter_usernames(df: pd.DataFrame) -> pd.Series:
 def _fully_validated_mask(df: pd.DataFrame) -> pd.Series:
     """Vectorised equivalent of ``df.apply(is_fully_validated, axis=1)``."""
     return (
-        (df["prompt_validation_1"].str["choice"] == "relevant")
-        & (df["prompt_validation_2"].str["choice"] == "relevant")
-        & (df["prompt_validation_3"].str["choice"] == "relevant")
+        df["prompt_validation_1"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
+        & df["prompt_validation_2"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
+        & df["prompt_validation_3"].str["choice"].isin(ACCEPT_VALIDATION_CHOICES)
     )
 
 

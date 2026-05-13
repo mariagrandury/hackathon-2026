@@ -57,7 +57,7 @@ PARTICIPANTS_DF = pd.DataFrame(
 STATE: dict = {"prompts": None}
 
 
-def _val(user: str, choice: str = "relevant") -> dict:
+def _val(user: str, choice: str = "knowledge") -> dict:
     return {"choice": choice, "username": user}
 
 
@@ -372,7 +372,7 @@ def test_validation_save_advances_state():
         app.save_validation,
         idx0,
         slot0,
-        "relevant",
+        "knowledge",
         "es",
         user,
     )
@@ -387,7 +387,7 @@ def test_validation_save_advances_state():
     post = STATE["prompts"].at[idx0, f"prompt_validation_{slot0}"]
     check(
         "slot now records alice2-cl with choice='relevant'",
-        post["username"] == "alice2-cl" and post["choice"] == "relevant",
+        post["username"] == "alice2-cl" and post["choice"] == "knowledge",
         f"{post}",
     )
 
@@ -603,7 +603,7 @@ def test_full_validation_unlocks_voting():
             app.save_validation,
             idx,
             slot,
-            "relevant",
+            "knowledge",
             "es",
             profile(user),
         )
@@ -611,7 +611,7 @@ def test_full_validation_unlocks_voting():
     final = STATE["prompts"].at[idx, "prompt_validation_3"]
     check(
         "row 1 now fully validated",
-        final["username"] == "alice3-cl" and final["choice"] == "relevant",
+        final["username"] == "alice3-cl" and final["choice"] == "knowledge",
     )
 
     # Confirm it's now in the voting pool.
@@ -676,7 +676,7 @@ def test_country_filter_and_audit_trail():
     row1_state_before = STATE["prompts"].at[1, "prompt_validation_2"].copy()
     out, _ = T.time(
         "save_validation (alice-cl) re-attempt on row 1",
-        app.save_validation, 1, 2, "relevant", "es", profile("alice-cl"),
+        app.save_validation, 1, 2, "knowledge", "es", profile("alice-cl"),
     )
     check(
         "no extra push happened (duplicate write skipped)",

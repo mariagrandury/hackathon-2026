@@ -48,7 +48,18 @@ from data import (
 )
 
 VOTE_CHOICES = ("a", "b", "both", "none")
-VALIDATION_CHOICES = ("trivial", "stereotype", "unrelated", "relevant")
+# Three reject buckets followed by the four AlKhamissi et al. (2025) cultural
+# dimensions used as accept buckets. `data.is_fully_validated` treats any of
+# the four accept choices as a positive validation.
+VALIDATION_CHOICES = (
+    "trivial",
+    "stereotype",
+    "unrelated",
+    "knowledge",
+    "preference",
+    "dynamics",
+    "bias_probe",
+)
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
@@ -100,11 +111,14 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
         "validation_choice_label": "How would you classify this prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Stereotyping / non-neutral",
-        "validation_choice_unrelated": "Unrelated to the country's culture",
-        "validation_choice_relevant": "Relevant for understanding the country's culture",
-        "validation_choice_required": "Pick one of the four options before saving.",
+        "validation_choice_trivial": "Trivial / factual (reject)",
+        "validation_choice_stereotype": "Reproduces a stereotype (reject)",
+        "validation_choice_unrelated": "Not culturally grounded in the country (reject)",
+        "validation_choice_knowledge": "Cultural knowledge (accept)",
+        "validation_choice_preference": "Cultural preference / norm (accept)",
+        "validation_choice_dynamics": "Cultural dynamics / interaction (accept)",
+        "validation_choice_bias_probe": "Bias probe: neutral prompt that surfaces stereotypes (accept)",
+        "validation_choice_required": "Pick one of the seven options before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
         "validation_in_progress": "Validating prompt #{id} ({country}).",
@@ -174,11 +188,14 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
         "validation_choice_label": "¿Cómo clasificarías este prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Estereotipos / no neutral",
-        "validation_choice_unrelated": "No relacionado con la cultura del país",
-        "validation_choice_relevant": "Relevante para comprender la cultura del país",
-        "validation_choice_required": "Selecciona una de las cuatro opciones antes de guardar.",
+        "validation_choice_trivial": "Trivial / factual (rechazar)",
+        "validation_choice_stereotype": "Reproduce un estereotipo (rechazar)",
+        "validation_choice_unrelated": "Sin anclaje cultural en el país (rechazar)",
+        "validation_choice_knowledge": "Conocimiento cultural (aceptar)",
+        "validation_choice_preference": "Preferencia o norma cultural (aceptar)",
+        "validation_choice_dynamics": "Dinámica cultural /interacción (aceptar)",
+        "validation_choice_bias_probe": "Trampa de sesgo: prompt neutral que detecta estereotipos (aceptar)",
+        "validation_choice_required": "Selecciona una de las siete opciones antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
         "validation_in_progress": "Validando el prompt #{id} ({country}).",
@@ -248,11 +265,14 @@ T: dict[str, dict[str, str]] = {
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
         "validation_choice_label": "Como você classificaria este prompt?",
-        "validation_choice_trivial": "Trivial / factual",
-        "validation_choice_stereotype": "Estereótipos / não neutro",
-        "validation_choice_unrelated": "Não relacionado com a cultura do país",
-        "validation_choice_relevant": "Relevante para compreender a cultura do país",
-        "validation_choice_required": "Selecione uma das quatro opções antes de salvar.",
+        "validation_choice_trivial": "Trivial / factual (rejeitar)",
+        "validation_choice_stereotype": "Reproduz / induz um estereótipo (rejeitar)",
+        "validation_choice_unrelated": "Sem ancoragem cultural no país (rejeitar)",
+        "validation_choice_knowledge": "Conhecimento cultural (aceitar)",
+        "validation_choice_preference": "Preferência ou norma cultural (aceitar)",
+        "validation_choice_dynamics": "Dinâmica cultural / interação (aceitar)",
+        "validation_choice_bias_probe": "Sonda de viés: prompt neutro que detecta estereótipos (aceitar)",
+        "validation_choice_required": "Selecione uma das sete opções antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
         "validation_in_progress": "Validando o prompt #{id} ({country}).",
@@ -677,7 +697,7 @@ def _build_validation_tab(language: gr.State) -> dict:
     load_status = gr.Markdown(s["validation_load_status_initial"])
     current_prompt = gr.Textbox(
         label=s["validation_prompt_label"],
-        lines=5,
+        lines=8,
         interactive=False,
     )
     choice_radio = gr.Radio(
@@ -723,7 +743,7 @@ def _build_voting_tab(language: gr.State) -> dict:
     slot_state = gr.State(-1)
     status_md = gr.Markdown(s["voting_load_status_initial"])
     current_prompt = gr.Textbox(
-        label=s["voting_prompt_label"], lines=4, interactive=False
+        label=s["voting_prompt_label"], lines=8, interactive=False
     )
     with gr.Row():
         ans_a = gr.Textbox(label=s["voting_answer_a_label"], lines=8, interactive=False)

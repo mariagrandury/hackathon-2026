@@ -63,7 +63,7 @@ DUMMY_PARTICIPANTS = [
 ]
 
 
-def _validation(username: str, choice: str = "relevant") -> dict:
+def _validation(username: str, choice: str = "knowledge") -> dict:
     return {"choice": choice, "username": username}
 
 
