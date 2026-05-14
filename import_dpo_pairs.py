@@ -37,7 +37,7 @@ DESTRUCTIVE: overwrites ``mariagrandury/cultural_preferences`` wholesale.
 Re-running drops any user annotations already collected on that repo.
 
 Usage:
-    python migrate_from_v0.py          # uses HF_TOKEN from env / .env
+    python import_dpo_pairs.py         # uses HF_TOKEN from env / .env
 """
 
 from __future__ import annotations

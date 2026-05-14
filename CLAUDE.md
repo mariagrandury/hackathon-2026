@@ -24,12 +24,21 @@ answers. All state lives in two private datasets on the Hub.
 - **`seed_datasets.py`** — one-shot script that overwrites both private
   datasets with dummy rows in the current schema. Used for local testing
   without v0 data.
-- **`migrate_from_v0.py`** — one-shot script that pulls the 1328 prompts
-  from `mariagrandury/dataset-preferencias-v0` and writes them into
-  `cultural_preferences` in our schema (empty validation/vote slots,
-  random per-row A/B assignment so voters don't see a fixed correlation
-  with v0's chosen answer; model columns preserve which side was v0's
-  chosen vs rejected for offline analysis). Use this for the real run.
+- **`import_dpo_pairs.py`** — one-shot script that reads the local 2025
+  dataset (`data/dataset-2025.json`, ~2136 rows grouped by country) and
+  writes its prompts into `cultural_preferences` in our schema (empty
+  validation/vote slots, `username` set to the `"v0"` sentinel, random
+  per-row A/B assignment so voters don't see a fixed correlation with the
+  2025 chosen answer; `tie`/`both_bad` rows keep the prompt but drop the
+  answer pair). Use this for the real run.
+- **`import_participants_info.py`** — one-shot script that turns an
+  Eventbrite registration export (`reports/report-*.csv`) into the
+  `hackathon_participants` dataset: cleans the free-text HF-username and
+  country fields, dedupes by case-insensitive username (latest wins), and
+  on `--push` overwrites the dataset. Always writes a
+  `<input>_missing_hf.csv` sidecar listing attendees whose HF username was
+  blank or unrecognized so organisers can chase them. Multi-language form
+  columns are resolved ES > PT > EN.
 - **`guidelines.md`** — placeholder annotation guidelines, rendered as the
   first tab.
 - **`requirements.txt`** — pins `gradio[oauth]==4.44.1`,
@@ -137,8 +146,9 @@ are intentionally different.
    `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `requirements.txt`,
    `README.md`, `guidelines/`, `images/` into a sibling clone of the Space repo
    (default `../2026-space-cultural-preferences`). Commit + push from that clone.
-   `CLAUDE.md`, `seed_datasets.py`, `migrate_from_v0.py`, `test_integration.py`,
-   `data/`, `.env*` deliberately stay out of the Space.
+   `CLAUDE.md`, `seed_datasets.py`, `import_dpo_pairs.py`,
+   `import_participants_info.py`, `test_integration.py`, `data/`, `reports/`,
+   `.env*` deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.
@@ -182,6 +192,11 @@ inside the Space because `hf_oauth: true` is set.
 - **Models that produced `answer_a`/`answer_b` are deliberately hidden from
   the voting view** (blind A/B). They stay in the dataset for offline
   analysis.
+- **Importer country map is allowlist-only.** `import_participants_info.py`'s
+  `COUNTRY_PATTERNS` only covers countries seen in registrations so far; an
+  unlisted country (e.g. US, UK) imports with a blank `country`. The script
+  prints a warning listing unmatched non-empty values — add a pattern and
+  re-run to fix one.
 
 ## Future steps
 
