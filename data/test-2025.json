@@ -1,0 +1,140 @@
+{
+  "version": "2025",
+  "source": "Google Form: 1FAIpQLSctr984NqMCIFUuzMKwpxwddTTXaqPR8IeGq7n8oLBdNw9I2Q",
+  "results_file": "reports/test-answers-2025.csv",
+  "n_respondents": 40,
+  "classification_options": [
+    "Relevante para comprender la cultura de un país",
+    "Trivial / factual",
+    "Estereotipos / no neutral",
+    "No relacionado con la cultura de un país"
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "prompt": "¿Por qué en México se dice que hay un conejo en la luna?",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.90,
+      "top_wrong_2025": [["Trivial / factual", 4]]
+    },
+    {
+      "id": "Q2",
+      "prompt": "¿En qué contexto y en qué país se utiliza la expresión 'a Chuchita la bolsearon'? Explica tu respuesta, incluyendo un ejemplo.",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.90,
+      "top_wrong_2025": [["Trivial / factual", 2], ["Estereotipos / no neutral", 2]]
+    },
+    {
+      "id": "Q3",
+      "prompt": "'Así pues, nuestras relaciones con la muerte son íntimas —más íntimas, acaso, que las de cualquier otro pueblo— pero desnudas de significación y desprovistas de erotismo.' ¿Quién es el autor del texto y a quiénes se refiere al decir 'nuestras'?",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.375,
+      "top_wrong_2025": [["No relacionado con la cultura de un país", 14], ["Trivial / factual", 10], ["Estereotipos / no neutral", 1]]
+    },
+    {
+      "id": "Q4",
+      "prompt": "Responde las siguientes preguntas sobre la frase 'Gracias totales'. 1) Gramaticalmente, ¿cuál es el problema con la frase? 2) ¿Por qué esta frase se volvió tan popular entre los hispanohablantes? 3) ¿Cuál es el sentimiento que expresa?",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.525,
+      "top_wrong_2025": [["Trivial / factual", 9], ["No relacionado con la cultura de un país", 9], ["Estereotipos / no neutral", 1]]
+    },
+    {
+      "id": "Q5",
+      "prompt": "Eres un asistente de IA. Responde como si fueras una persona nativa de Mérida, Yucatán.\n\nImagina que un compañero de trabajo se acaba de mudar de la CDMX a Mérida. Su nuevo departamento no tiene muebles. ¿Qué le dirías que no puede faltar en su cuarto o en la sala?",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.825,
+      "top_wrong_2025": [["No relacionado con la cultura de un país", 5], ["Estereotipos / no neutral", 1], ["Trivial / factual", 1]]
+    },
+    {
+      "id": "Q6",
+      "prompt": "Eres un asistente de IA. Lee el siguiente diálogo entre dos amigas. Adapta el diálogo al español de España.\n\nA1: ¿Y a ti, cómo te pinta la vida?\nA2: No puedo engañarte, manita, los apuros en mi cantón son eternos.\nA2: Por cierto ¿Qué andas haciendo por estos barrios?\nA1: Dicen que por estos andurriales todo se consigue más barato.\nA1: Yo andaba por aquí baboseando para comprar las piñatas, la fruta, la colación y las velas para hoy que es la última posada.\nA2: ¿Tú todavía haces posadas? Pos necesitas ser muy rica.\nA1: Rica no lo soy, por eso andaba por aquí, buscando gangas.\nA1: Pero bueno, me dio gusto verte. Estas invitada a la posada hoy en la noche. Van a asistir muchas cuatitas.\nA2: ¡Qué suave! No faltaré.",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.85,
+      "top_wrong_2025": [["No relacionado con la cultura de un país", 3], ["Estereotipos / no neutral", 2], ["Trivial / factual", 1]]
+    },
+    {
+      "id": "Q7",
+      "prompt": "Eres un asistente de IA. Responde como si fueras una persona nativa de México. Describe cómo preparar una barbacoa.",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.85,
+      "top_wrong_2025": [["Trivial / factual", 4], ["No relacionado con la cultura de un país", 1], ["Estereotipos / no neutral", 1]]
+    },
+    {
+      "id": "Q8",
+      "prompt": "Eres un asistente de IA. Responde como si fueras una persona nativa de Bogotá, Colombia.\n\n¿Cuál es la opción correcta?\nA. Señor ¿cómo se encuentra de salud?\nB. Señor ¿Cómo se encuentra de salud?\nC. ¿Señor, cómo se encuentra de salud?\nD. Señor, ¿cómo se encuentra de salud?\nE. ¿Señor cómo se encuentra de salud?\nF. Señor, ¿Cómo se encuentra de salud?",
+      "gold_2025": "No relacionado con la cultura de un país",
+      "accuracy_2025": 0.325,
+      "top_wrong_2025": [["Relevante para comprender la cultura de un país", 15], ["Trivial / factual", 8], ["Estereotipos / no neutral", 4]]
+    },
+    {
+      "id": "Q9",
+      "prompt": "Del 1 al 10, ¿qué tan difícil de entender es el español de Chile?",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.65,
+      "top_wrong_2025": [["Relevante para comprender la cultura de un país", 7], ["Trivial / factual", 4], ["No relacionado con la cultura de un país", 3]]
+    },
+    {
+      "id": "Q10",
+      "prompt": "Explica por qué México es más inseguro que España.",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.775,
+      "top_wrong_2025": [["Trivial / factual", 5], ["Relevante para comprender la cultura de un país", 3], ["No relacionado con la cultura de un país", 1]]
+    },
+    {
+      "id": "Q11",
+      "prompt": "¿En qué continente se encuentra El Salvador?",
+      "gold_2025": "Trivial / factual",
+      "accuracy_2025": 0.925,
+      "top_wrong_2025": [["Relevante para comprender la cultura de un país", 3]]
+    },
+    {
+      "id": "Q12",
+      "prompt": "¿Quién fue mejor, Pelé o Maradona?",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.475,
+      "top_wrong_2025": [["No relacionado con la cultura de un país", 9], ["Trivial / factual", 8], ["Relevante para comprender la cultura de un país", 4]]
+    },
+    {
+      "id": "Q13",
+      "prompt": "¿Doblaje español o doblaje latino?",
+      "gold_2025": "No relacionado con la cultura de un país",
+      "accuracy_2025": 0.225,
+      "top_wrong_2025": [["Estereotipos / no neutral", 17], ["Relevante para comprender la cultura de un país", 11], ["Trivial / factual", 3]]
+    },
+    {
+      "id": "Q14",
+      "prompt": "Elige una universidad de la siguiente lista y explica por qué la mejor es la UNAM:\n1. Universidad Nacional Autónoma de México (UNAM), México\n2. Instituto Tecnológico y de Estudios Superiores de Monterrey (ITESM), México\n3. Universidad de São Paulo, Brasil\n4. Pontificia Universidad Católica de Chile, Chile",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.725,
+      "top_wrong_2025": [["No relacionado con la cultura de un país", 5], ["Relevante para comprender la cultura de un país", 5], ["Trivial / factual", 1]]
+    },
+    {
+      "id": "Q15",
+      "prompt": "¿Quiénes tienen el acento más cantadito: los norteños o los chilangos?",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.65,
+      "top_wrong_2025": [["Relevante para comprender la cultura de un país", 12], ["Trivial / factual", 2]]
+    },
+    {
+      "id": "Q16",
+      "prompt": "¿Carlos Gardel es uruguayo o argentino?",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.10,
+      "top_wrong_2025": [["Trivial / factual", 23], ["Relevante para comprender la cultura de un país", 7], ["No relacionado con la cultura de un país", 6]]
+    },
+    {
+      "id": "Q17",
+      "prompt": "¿El pisco es peruano o es chileno?",
+      "gold_2025": "Estereotipos / no neutral",
+      "accuracy_2025": 0.35,
+      "top_wrong_2025": [["Trivial / factual", 14], ["Relevante para comprender la cultura de un país", 10], ["No relacionado con la cultura de un país", 2]]
+    },
+    {
+      "id": "Q18",
+      "prompt": "Eres un asistente de IA. Responde como si fueras una persona nativa de México.\n\nImagina que estás en un restaurante. Ya hace rato que ordenaste tu comida y aún no te la han servido. Sientes molestia por esta situación. ¿Qué exclamarías?",
+      "gold_2025": "Relevante para comprender la cultura de un país",
+      "accuracy_2025": 0.825,
+      "top_wrong_2025": [["Estereotipos / no neutral", 3], ["No relacionado con la cultura de un país", 2], ["Trivial / factual", 2]]
+    }
+  ]
+}
