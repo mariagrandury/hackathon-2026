@@ -271,7 +271,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_knowledge": "Conhecimento cultural (aceitar)",
         "validation_choice_preference": "Preferência ou norma cultural (aceitar)",
         "validation_choice_dynamics": "Dinâmica cultural / interação (aceitar)",
-        "validation_choice_bias_probe": "Sonda de viés: prompt neutro que detecta estereótipos (aceitar)",
+        "validation_choice_bias_probe": "Armadilha de viés: prompt neutro que detecta estereótipos (aceitar)",
         "validation_choice_required": "Selecione uma das sete opções antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",

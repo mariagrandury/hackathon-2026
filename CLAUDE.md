@@ -42,10 +42,10 @@ answers. All state lives in two private datasets on the Hub.
 Both private, owned by `mariagrandury`. Schema is the source of truth in
 `data.py`; `seed_datasets.py` only re-exports it.
 
-| Dataset                                | Columns                                                                                                                                                                                                              |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`                                                                                                                                                                           |
-| `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}`                                                                       |
+| Dataset                                | Columns                                                                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`                                                                                                      |
+| `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}` |
 
 Both `prompt_validation_i` and `answer_chosen_i` are `{choice: str, username: str}`.
 
@@ -201,20 +201,26 @@ In rough priority order:
 4. **Per-(language, country) quotas.** A dashboard for organisers showing
    gaps to fill, plus enforcement on `Save prompt` so the dataset stays
    balanced.
-5. **Translate the new guidelines.** `guidelines/guidelines_es.md` was
-   rewritten around the [AlKhamissi et al. (2025)](https://arxiv.org/abs/2510.05931)
-   four-dimension taxonomy (knowledge / preference / dynamics / bias-probe),
-   the seven-tag validation flow and per-dimension voting criteria. The PT
-   and EN guideline files still need the same treatment — only the radio
-   labels in `T` are localized so the app doesn't crash.
+5. **Keep guideline translations in sync.** `guidelines/guidelines_es.md` is
+   the source of truth for the four-dimension framing
+   ([AlKhamissi et al., 2025](https://arxiv.org/abs/2510.05931): knowledge /
+   preference / dynamics / bias-trap), the seven-tag validation flow and
+   per-dimension voting criteria. `guidelines_en.md` and `guidelines_pt.md`
+   mirror it — when you change ES, propagate to the other two. Code blocks
+   in the EN file deliberately stay in Spanish (participants write Spanish
+   prompts even when the UI is in English); PT examples are Brazilian
+   Portuguese with European Portuguese touches in the §1 vocabulary table.
+   The bias-trap label is localized as "Trampa de sesgo" (ES), "Bias probe"
+   (EN), "Armadilha de viés" (PT) — keep the trap metaphor consistent
+   across all three.
 6. **Better empty-state UX.** When a tab has nothing to show (e.g. no more
    prompts to validate, leaderboard before login), the message is plain
    markdown — could be a friendlier empty state with a CTA pointing to the
    next thing to do.
 7. **Self-test mode.** Vendor the in-session smoke-run pattern (mock dataset
-   + stubbed OAuth) into a `tests/` folder so contributors can run the UI
-   end-to-end without an HF token.
-8. **Audit log.** Optional column tracking *who changed what when* for each
+   - stubbed OAuth) into a `tests/` folder so contributors can run the UI
+     end-to-end without an HF token.
+8. **Audit log.** Optional column tracking _who changed what when_ for each
    slot, so disputed validations/votes can be traced.
 
 ## Style and conventions
