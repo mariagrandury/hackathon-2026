@@ -48,22 +48,24 @@ from data import (
 )
 
 VOTE_CHOICES = ("a", "b", "both", "none")
-# Three reject buckets followed by the four AlKhamissi et al. (2025) cultural
-# dimensions used as accept buckets. `data.is_fully_validated` treats any of
-# the four accept choices as a positive validation.
-VALIDATION_CHOICES = (
-    "trivial",
-    "stereotype",
-    "unrelated",
-    "knowledge",
-    "preference",
-    "dynamics",
-    "bias_probe",
-)
+# Validation buckets: three reject buckets and the four AlKhamissi et al.
+# (2025) cultural dimensions used as accept buckets. The validation tab shows
+# them as two side-by-side radios (Reject | Accept). `data.is_fully_validated`
+# treats any of the four accept choices as a positive validation.
+REJECT_CHOICES = ("trivial", "stereotype", "unrelated")
+ACCEPT_CHOICES = ("knowledge", "preference", "dynamics", "bias_probe")
+VALIDATION_CHOICES = REJECT_CHOICES + ACCEPT_CHOICES
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
 IMAGES_DIR = "images"
+
+# Gradio's radio options container (`.wrap`) defaults to `flex-direction: row`,
+# so buckets flow side-by-side. Force one bucket per line in each of the two
+# validation columns (Reject | Accept).
+APP_CSS = (
+    ".validation-choices .wrap { flex-direction: column; align-items: flex-start; }"
+)
 
 # Register ``images/`` as a static directory so the guidelines Markdown can
 # embed local infographics via ``/file=images/...`` URLs. Without this,
@@ -110,15 +112,17 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
-        "validation_choice_label": "How would you classify this prompt?",
-        "validation_choice_trivial": "Trivial / factual (reject)",
-        "validation_choice_stereotype": "Reproduces a stereotype (reject)",
-        "validation_choice_unrelated": "Not culturally grounded in the country (reject)",
-        "validation_choice_knowledge": "Cultural knowledge (accept)",
-        "validation_choice_preference": "Cultural preference / norm (accept)",
-        "validation_choice_dynamics": "Cultural dynamics / interaction (accept)",
-        "validation_choice_bias_probe": "Bias probe: neutral prompt that surfaces stereotypes (accept)",
-        "validation_choice_required": "Pick one of the seven options before saving.",
+        "validation_choice_label": "**How would you classify this prompt, according to the guide?**",
+        "validation_group_reject": "Reject",
+        "validation_group_accept": "Accept",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Reproduces a stereotype",
+        "validation_choice_unrelated": "Not culturally grounded in the country",
+        "validation_choice_knowledge": "Cultural knowledge",
+        "validation_choice_preference": "Cultural preference / norm",
+        "validation_choice_dynamics": "Cultural dynamics / interaction",
+        "validation_choice_bias_probe": "Bias probe: neutral prompt that surfaces stereotypes",
+        "validation_choice_required": "Select one option (reject or accept) before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
         "validation_in_progress": "Validating prompt #{id} ({country}).",
@@ -164,12 +168,12 @@ T: dict[str, dict[str, str]] = {
         "not_logged_in": "Sesión no iniciada. Haz clic en **Iniciar sesión con Hugging Face** para empezar.",
         "not_logged_in_short": "Sesión no iniciada.",
         "logged_in_as": "Sesión iniciada como **{username}**.",
-        "tab_guidelines": "Pautas de anotación",
+        "tab_guidelines": "Guía de anotación",
         "tab_writing": "Escribir prompts",
         "tab_validation": "Validar prompts",
         "tab_voting": "Votar respuestas",
         "tab_leaderboard": "Ranking",
-        "guidelines_missing": "Las pautas en este idioma todavía no están disponibles.",
+        "guidelines_missing": "La guía en este idioma todavía no están disponibles.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
         "load_first": "Carga un prompt primero.",
@@ -187,15 +191,17 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
-        "validation_choice_label": "¿Cómo clasificarías este prompt?",
-        "validation_choice_trivial": "Trivial / factual (rechazar)",
-        "validation_choice_stereotype": "Reproduce un estereotipo (rechazar)",
-        "validation_choice_unrelated": "Sin anclaje cultural en el país (rechazar)",
-        "validation_choice_knowledge": "Conocimiento cultural (aceptar)",
-        "validation_choice_preference": "Preferencia o norma cultural (aceptar)",
-        "validation_choice_dynamics": "Dinámica cultural /interacción (aceptar)",
-        "validation_choice_bias_probe": "Trampa de sesgo: prompt neutral que detecta estereotipos (aceptar)",
-        "validation_choice_required": "Selecciona una de las siete opciones antes de guardar.",
+        "validation_choice_label": "**¿Cómo clasificarías este prompt según la guía?**",
+        "validation_group_reject": "Rechazar",
+        "validation_group_accept": "Aceptar",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Reproduce un estereotipo",
+        "validation_choice_unrelated": "Sin anclaje cultural en el país",
+        "validation_choice_knowledge": "Conocimiento cultural",
+        "validation_choice_preference": "Preferencia o norma cultural",
+        "validation_choice_dynamics": "Dinámica cultural / interacción",
+        "validation_choice_bias_probe": "Trampa de sesgo: prompt neutral que detecta estereotipos",
+        "validation_choice_required": "Selecciona una opción (rechazar o aceptar) antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
         "validation_in_progress": "Validando el prompt #{id} ({country}).",
@@ -264,15 +270,17 @@ T: dict[str, dict[str, str]] = {
         # Validation
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
-        "validation_choice_label": "Como você classificaria este prompt?",
-        "validation_choice_trivial": "Trivial / factual (rejeitar)",
-        "validation_choice_stereotype": "Reproduz / induz um estereótipo (rejeitar)",
-        "validation_choice_unrelated": "Sem ancoragem cultural no país (rejeitar)",
-        "validation_choice_knowledge": "Conhecimento cultural (aceitar)",
-        "validation_choice_preference": "Preferência ou norma cultural (aceitar)",
-        "validation_choice_dynamics": "Dinâmica cultural / interação (aceitar)",
-        "validation_choice_bias_probe": "Armadilha de viés: prompt neutro que detecta estereótipos (aceitar)",
-        "validation_choice_required": "Selecione uma das sete opções antes de salvar.",
+        "validation_choice_label": "**Como você classificaria este prompt segundo o guia?**",
+        "validation_group_reject": "Rejeitar",
+        "validation_group_accept": "Aceitar",
+        "validation_choice_trivial": "Trivial / factual",
+        "validation_choice_stereotype": "Reproduz / induz um estereótipo",
+        "validation_choice_unrelated": "Sem ancoragem cultural no país",
+        "validation_choice_knowledge": "Conhecimento cultural",
+        "validation_choice_preference": "Preferência ou norma cultural",
+        "validation_choice_dynamics": "Dinâmica cultural / interação",
+        "validation_choice_bias_probe": "Armadilha de viés: prompt neutro que detecta estereótipos",
+        "validation_choice_required": "Selecione uma opção (rejeitar ou aceitar) antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
         "validation_in_progress": "Validando o prompt #{id} ({country}).",
@@ -495,26 +503,32 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
 def save_validation(
     idx: int,
     slot: int,
-    choice: str,
+    reject_choice: str | None,
+    accept_choice: str | None,
     lang: str,
     profile: gr.OAuthProfile | None,
 ):
     """Record the validation, then auto-advance to the next prompt and
-    reset the choice radio.
+    reset both choice radios.
 
-    Returns updates for ``(idx_state, slot_state, current_prompt,
-    choice_radio, load_status, save_status)``. On input-validation errors
-    the visible inputs are left untouched (``gr.update()``); on successful
-    save the next prompt is loaded and the radio cleared so the user has
-    an unambiguous cue that the previous validation went through."""
+    The validation tab has two radios (Reject | Accept) kept mutually
+    exclusive, so at most one of ``reject_choice``/``accept_choice`` is set;
+    the other is ``None``. Returns updates for ``(idx_state, slot_state,
+    current_prompt, reject_radio, accept_radio, load_status, save_status)``.
+    On input-validation errors the visible inputs are left untouched
+    (``gr.update()``); on successful save the next prompt is loaded and both
+    radios cleared so the user has an unambiguous cue that the previous
+    validation went through."""
     s = _t(lang)
     keep_state = (
         gr.update(),  # idx_state
         gr.update(),  # slot_state
         gr.update(),  # current_prompt
-        gr.update(),  # choice_radio
+        gr.update(),  # reject_radio
+        gr.update(),  # accept_radio
         gr.update(),  # load_status
     )
+    choice = accept_choice or reject_choice
     if profile is None:
         return (*keep_state, s["login_required"])
     if idx is None or idx < 0 or slot not in (1, 2, 3):
@@ -546,13 +560,14 @@ def save_validation(
             commit_message=f"{profile.username} validated prompt with ID {prompt_id}",
         )
 
-    # Advance to the next prompt and reset the radio.
+    # Advance to the next prompt and reset both radios.
     next_idx, next_slot, next_prompt, next_status = fetch_next_validation(lang, profile)
     return (
         next_idx,  # idx_state
         next_slot,  # slot_state
         next_prompt,  # current_prompt
-        gr.update(value=None),  # choice_radio reset
+        gr.update(value=None),  # reject_radio reset
+        gr.update(value=None),  # accept_radio reset
         next_status,  # load_status
         s["validation_saved"],  # save_status (same whether we wrote or skipped)
     )
@@ -684,10 +699,26 @@ def _build_writing_tab(language: gr.State) -> dict:
     }
 
 
-def _validation_radio_choices(lang: str) -> list[tuple[str, str]]:
-    """`(label, value)` pairs for the validation radio, in display order."""
+def _validation_reject_choices(lang: str) -> list[tuple[str, str]]:
+    """`(label, value)` pairs for the Reject radio, in display order."""
     s = _t(lang)
-    return [(s[f"validation_choice_{c}"], c) for c in VALIDATION_CHOICES]
+    return [(s[f"validation_choice_{c}"], c) for c in REJECT_CHOICES]
+
+
+def _validation_accept_choices(lang: str) -> list[tuple[str, str]]:
+    """`(label, value)` pairs for the Accept radio, in display order."""
+    s = _t(lang)
+    return [(s[f"validation_choice_{c}"], c) for c in ACCEPT_CHOICES]
+
+
+def _clear_other_radio(this_value: str | None):
+    """Mutual-exclusivity helper for the two validation radios.
+
+    Wired to each radio's ``.change``: when this radio gains a value, clear
+    the other; when it's cleared, leave the other alone (``gr.update()`` is a
+    no-op, so it doesn't re-trigger the other radio's ``.change`` — that's
+    what stops an infinite clear-each-other cascade)."""
+    return gr.update(value=None) if this_value else gr.update()
 
 
 def _build_validation_tab(language: gr.State) -> dict:
@@ -700,15 +731,37 @@ def _build_validation_tab(language: gr.State) -> dict:
         lines=8,
         interactive=False,
     )
-    choice_radio = gr.Radio(
-        choices=_validation_radio_choices(DEFAULT_LANG),
-        label=s["validation_choice_label"],
-        value=None,
-    )
+    # The seven buckets are split across two side-by-side radios so the
+    # annotator sees Reject vs Accept as distinct columns. They behave as a
+    # single choice: ``_clear_other_radio`` keeps at most one selected, and
+    # ``save_validation`` reads whichever holds a value.
+    choice_label = gr.Markdown(s["validation_choice_label"])
+    with gr.Row():
+        with gr.Column():
+            reject_radio = gr.Radio(
+                choices=_validation_reject_choices(DEFAULT_LANG),
+                label=s["validation_group_reject"],
+                value=None,
+                elem_classes=["validation-choices"],
+            )
+        with gr.Column():
+            accept_radio = gr.Radio(
+                choices=_validation_accept_choices(DEFAULT_LANG),
+                label=s["validation_group_accept"],
+                value=None,
+                elem_classes=["validation-choices"],
+            )
     with gr.Row():
         load_btn = gr.Button(s["validation_load_button"])
         save_val_btn = gr.Button(s["validation_save_button"], variant="primary")
     save_val_status = gr.Markdown()
+
+    reject_radio.change(
+        _clear_other_radio, inputs=[reject_radio], outputs=[accept_radio]
+    )
+    accept_radio.change(
+        _clear_other_radio, inputs=[accept_radio], outputs=[reject_radio]
+    )
 
     load_btn.click(
         fetch_next_validation,
@@ -717,12 +770,13 @@ def _build_validation_tab(language: gr.State) -> dict:
     )
     save_val_btn.click(
         save_validation,
-        inputs=[idx_state, slot_state, choice_radio, language],
+        inputs=[idx_state, slot_state, reject_radio, accept_radio, language],
         outputs=[
             idx_state,
             slot_state,
             current_prompt,
-            choice_radio,
+            reject_radio,
+            accept_radio,
             load_status,
             save_val_status,
         ],
@@ -730,7 +784,9 @@ def _build_validation_tab(language: gr.State) -> dict:
     return {
         "load_status": load_status,
         "current_prompt": current_prompt,
-        "choice_radio": choice_radio,
+        "choice_label": choice_label,
+        "reject_radio": reject_radio,
+        "accept_radio": accept_radio,
         "load_btn": load_btn,
         "save_btn": save_val_btn,
         "save_status": save_val_status,
@@ -992,9 +1048,15 @@ def init_ui(profile: gr.OAuthProfile | None):
         # Validation (labels + initial status)
         gr.update(value=s["validation_load_status_initial"]),
         gr.update(label=s["validation_prompt_label"]),
+        gr.update(value=s["validation_choice_label"]),
         gr.update(
-            choices=_validation_radio_choices(lang),
-            label=s["validation_choice_label"],
+            choices=_validation_reject_choices(lang),
+            label=s["validation_group_reject"],
+            value=None,
+        ),
+        gr.update(
+            choices=_validation_accept_choices(lang),
+            label=s["validation_group_accept"],
             value=None,
         ),
         gr.update(value=s["validation_load_button"]),
@@ -1024,7 +1086,7 @@ def init_ui(profile: gr.OAuthProfile | None):
 
 def build_demo() -> gr.Blocks:
     s = _t(DEFAULT_LANG)
-    with gr.Blocks(title="Hackathon 2026") as demo:
+    with gr.Blocks(title="Hackathon 2026", css=APP_CSS) as demo:
         # Hidden state: the resolved language code, written by ``init_ui`` on
         # page load and read by every handler that needs to localize a
         # status message.
@@ -1087,7 +1149,9 @@ def build_demo() -> gr.Blocks:
                 writing["save_btn"],
                 validation["load_status"],
                 validation["current_prompt"],
-                validation["choice_radio"],
+                validation["choice_label"],
+                validation["reject_radio"],
+                validation["accept_radio"],
                 validation["load_btn"],
                 validation["save_btn"],
                 voting["status_md"],

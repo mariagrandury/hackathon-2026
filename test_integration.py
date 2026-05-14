@@ -368,25 +368,28 @@ def test_validation_save_advances_state():
     check("target slot empty before save", pre["username"] == "")
 
     out, _ = T.time(
-        "save_validation (relevant)",
+        "save_validation (knowledge)",
         app.save_validation,
         idx0,
         slot0,
-        "knowledge",
+        None,         # reject_radio value
+        "knowledge",  # accept_radio value
         "es",
         user,
     )
-    # save_validation now returns 6 outputs: (idx, slot, prompt, radio_update,
-    # load_status, save_status) — UI auto-advances and clears the choice.
-    check("returns 6-tuple (auto-advance shape)",
-          isinstance(out, tuple) and len(out) == 6)
-    radio_upd = out[3]
-    check("choice radio is reset (value=None)",
-          isinstance(radio_upd, dict) and radio_upd.get("value") is None)
+    # save_validation now returns 7 outputs: (idx, slot, prompt, reject_reset,
+    # accept_reset, load_status, save_status) — UI auto-advances and clears
+    # both radios.
+    check("returns 7-tuple (auto-advance shape)",
+          isinstance(out, tuple) and len(out) == 7)
+    reject_upd, accept_upd = out[3], out[4]
+    check("both choice radios reset (value=None)",
+          isinstance(reject_upd, dict) and reject_upd.get("value") is None
+          and isinstance(accept_upd, dict) and accept_upd.get("value") is None)
 
     post = STATE["prompts"].at[idx0, f"prompt_validation_{slot0}"]
     check(
-        "slot now records alice2-cl with choice='relevant'",
+        "slot now records alice2-cl with choice='knowledge'",
         post["username"] == "alice2-cl" and post["choice"] == "knowledge",
         f"{post}",
     )
@@ -603,7 +606,8 @@ def test_full_validation_unlocks_voting():
             app.save_validation,
             idx,
             slot,
-            "knowledge",
+            None,         # reject_radio value
+            "knowledge",  # accept_radio value
             "es",
             profile(user),
         )
@@ -676,7 +680,7 @@ def test_country_filter_and_audit_trail():
     row1_state_before = STATE["prompts"].at[1, "prompt_validation_2"].copy()
     out, _ = T.time(
         "save_validation (alice-cl) re-attempt on row 1",
-        app.save_validation, 1, 2, "knowledge", "es", profile("alice-cl"),
+        app.save_validation, 1, 2, None, "knowledge", "es", profile("alice-cl"),
     )
     check(
         "no extra push happened (duplicate write skipped)",

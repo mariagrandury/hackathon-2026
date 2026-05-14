@@ -520,7 +520,7 @@ Por cada prompt, elige una de **siete categorías**: las tres primeras lo rechaz
 ### 🚫 Rechazo (3 categorías)
 
 - **Trivial / factual**: tiene una sola respuesta correcta y obvia, o se puede responder consultando una enciclopedia. No requiere haber vivido la cultura.
-- **Reproduce / induce un estereotipo**: el prompt _asume_ un estereotipo como si fuera cierto y le pide al modelo que lo elabore (no es lo mismo que la _trampa de sesgo_, que es un prompt neutral; ver tabla abajo).
+- **Reproduce un estereotipo**: el prompt _asume_ un estereotipo como si fuera cierto y le pide al modelo que lo elabore (no es lo mismo que la _trampa de sesgo_, que es un prompt neutral; ver tabla abajo).
 - **Sin anclaje cultural en el país**: la pregunta puede estar bien planteada, pero no tiene relación con la cultura del país asignado.
 
 ### ✅ Aceptación (4 categorías)
