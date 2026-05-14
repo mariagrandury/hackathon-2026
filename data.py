@@ -8,6 +8,7 @@ configured as a secret. Locally, drop a ``.env`` file at the repo root with
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Optional
 
@@ -23,6 +24,14 @@ HF_TOKEN = os.environ.get("HF_TOKEN")
 
 EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
+# JSON-encoded ``{attempt_number_str: score_float}``. String column because
+# ``datasets.Features`` has no open-ended dict type, and the dict is small
+# enough that JSON encoding is fine.
+EMPTY_TEST_SCORE = "{}"
+
+# Minimum fraction of correct answers needed to unlock the action tabs
+# (Writing / Validation / Voting).
+TEST_PASS_THRESHOLD = 0.95
 
 # Validation `choice` values that count as a positive validation. Mirrors the
 # four AlKhamissi et al. (2025) cultural dimensions used in the app's
@@ -41,6 +50,7 @@ PARTICIPANTS_FEATURES = Features(
         "language": Value("string"),
         "country": Value("string"),
         "gmail": Value("string"),
+        "test_score": Value("string"),
     }
 )
 
@@ -110,6 +120,19 @@ def load_participants_df() -> pd.DataFrame:
     return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
+def push_participants_df(
+    df: pd.DataFrame, commit_message: str | None = None
+) -> None:
+    Dataset.from_pandas(
+        df, preserve_index=False, features=PARTICIPANTS_FEATURES
+    ).push_to_hub(
+        PARTICIPANTS_REPO,
+        private=True,
+        token=HF_TOKEN,
+        commit_message=commit_message,
+    )
+
+
 def load_prompts_df() -> pd.DataFrame:
     return load_dataset(PROMPTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
@@ -138,6 +161,54 @@ def participant_info(username: str) -> Optional[dict]:
     if matches.empty:
         return None
     return matches.iloc[0].to_dict()
+
+
+def parse_test_score(raw: str | None) -> dict[str, float]:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return {str(k): float(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def best_test_score(username: str | None, df: pd.DataFrame | None = None) -> float:
+    """Return the user's best attempt score in [0, 1], or 0.0 if no attempts."""
+    if not username:
+        return 0.0
+    if df is None:
+        df = load_participants_df()
+    matches = df[df["username"] == username]
+    if matches.empty:
+        return 0.0
+    scores = parse_test_score(matches.iloc[0].get("test_score"))
+    return max(scores.values()) if scores else 0.0
+
+
+def has_passed_test(username: str | None) -> bool:
+    return best_test_score(username) >= TEST_PASS_THRESHOLD
+
+
+def record_test_attempt(username: str, score: float) -> int:
+    """Append ``score`` as the next attempt for ``username`` and push the
+    participants dataset. Returns the new attempt number (1-indexed).
+
+    Raises ``LookupError`` if the user isn't a registered participant."""
+    df = load_participants_df()
+    matches = df.index[df["username"] == username].tolist()
+    if not matches:
+        raise LookupError(f"user {username!r} is not in the participants dataset")
+    idx = matches[0]
+    scores = parse_test_score(df.at[idx, "test_score"])
+    attempt = (max((int(k) for k in scores), default=0) + 1)
+    scores[str(attempt)] = float(score)
+    df.at[idx, "test_score"] = json.dumps(scores)
+    push_participants_df(
+        df,
+        commit_message=f"{username} took the test (attempt {attempt}): {score:.2f}",
+    )
+    return attempt
 
 
 def is_fully_validated(row) -> bool:

@@ -15,6 +15,7 @@ import os
 from datasets import Dataset
 
 from data import (
+    EMPTY_TEST_SCORE,
     EMPTY_VALIDATION,
     EMPTY_VOTE,
     PARTICIPANTS_FEATURES,
@@ -23,42 +24,52 @@ from data import (
     PROMPTS_REPO,
 )
 
+# Pre-passing score for the seed user so local dev with the dummy data has
+# the gated tabs visible by default. Other dummy users start fresh.
+SEED_PASSED_SCORE = '{"1": 1.0}'
+
 DUMMY_PARTICIPANTS = [
     {
         "username": "mariagrandury",
         "language": "es",
         "country": "es",
         "gmail": "maria.grandury@gmail.com",
+        "test_score": SEED_PASSED_SCORE,
     },
     {
         "username": "alice-cl",
         "language": "es",
         "country": "cl",
         "gmail": "alice.cl@gmail.com",
+        "test_score": EMPTY_TEST_SCORE,
     },
     {
         "username": "bruno-br",
         "language": "pt",
         "country": "br",
         "gmail": "bruno.br@gmail.com",
+        "test_score": EMPTY_TEST_SCORE,
     },
     {
         "username": "carla-co",
         "language": "es",
         "country": "co",
         "gmail": "carla.co@gmail.com",
+        "test_score": EMPTY_TEST_SCORE,
     },
     {
         "username": "diogo-pt",
         "language": "pt",
         "country": "pt",
         "gmail": "diogo.pt@gmail.com",
+        "test_score": EMPTY_TEST_SCORE,
     },
     {
         "username": "evan-en",
         "language": "en",
         "country": "es",
         "gmail": "evan.en@gmail.com",
+        "test_score": EMPTY_TEST_SCORE,
     },
 ]
 
