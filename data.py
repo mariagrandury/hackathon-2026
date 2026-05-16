@@ -36,15 +36,20 @@ EMPTY_TEST_SCORE = "{}"
 
 # Minimum fraction of correct answers needed to unlock the action tabs
 # (Writing / Validation / Voting).
-TEST_PASS_THRESHOLD = 0.95
+TEST_PASS_THRESHOLD = 0.80
 
-# Validation `choice` values that count as a positive validation. Mirrors the
-# four AlKhamissi et al. (2025) cultural dimensions used in the app's
-# validation radio (see `app.VALIDATION_CHOICES`). Reject buckets
-# (trivial / stereotype / unrelated) and the empty sentinel are excluded.
-ACCEPT_VALIDATION_CHOICES = frozenset(
-    {"knowledge", "preference", "dynamics", "bias_probe"}
-)
+# Canonical validation bucket ordering, shared across the app and the entry
+# test. Lives here (not in app.py) so non-Gradio modules like ``test_data``
+# can import it without dragging the UI layer in.
+#   - REJECT_CHOICES: three reject buckets.
+#   - ACCEPT_CHOICES: the four AlKhamissi et al. (2025) cultural dimensions.
+#   - VALIDATION_CHOICES: REJECT + ACCEPT, the full radio order.
+#   - ACCEPT_VALIDATION_CHOICES: set form of ACCEPT_CHOICES, used by row
+#     predicates (``is_fully_validated`` etc.) where set membership matters.
+REJECT_CHOICES = ("trivial", "stereotype", "unrelated")
+ACCEPT_CHOICES = ("knowledge", "preference", "dynamics", "bias_probe")
+VALIDATION_CHOICES = REJECT_CHOICES + ACCEPT_CHOICES
+ACCEPT_VALIDATION_CHOICES = frozenset(ACCEPT_CHOICES)
 
 VALIDATION_STRUCT = {"choice": Value("string"), "username": Value("string")}
 VOTE_STRUCT = {"choice": Value("string"), "username": Value("string")}
@@ -125,9 +130,7 @@ def load_participants_df() -> pd.DataFrame:
     return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
-def push_participants_df(
-    df: pd.DataFrame, commit_message: str | None = None
-) -> None:
+def push_participants_df(df: pd.DataFrame, commit_message: str | None = None) -> None:
     Dataset.from_pandas(
         df, preserve_index=False, features=PARTICIPANTS_FEATURES
     ).push_to_hub(
@@ -142,9 +145,7 @@ def load_prompts_df() -> pd.DataFrame:
     return load_dataset(PROMPTS_REPO, split="train", token=HF_TOKEN).to_pandas()
 
 
-def push_prompts_df(
-    df: pd.DataFrame, commit_message: str | None = None
-) -> None:
+def push_prompts_df(df: pd.DataFrame, commit_message: str | None = None) -> None:
     """Push ``df`` to the prompts repo with an optional commit message.
 
     Callers pass a per-action message like
@@ -160,9 +161,7 @@ def push_prompts_df(
     )
 
 
-def participant_info(
-    username: str, df: pd.DataFrame | None = None
-) -> Optional[dict]:
+def participant_info(username: str, df: pd.DataFrame | None = None) -> Optional[dict]:
     if df is None:
         df = load_participants_df()
     matches = df[df["username"] == username]
@@ -239,9 +238,7 @@ def _commit_participants(
     api.create_commit(
         repo_id=PARTICIPANTS_REPO,
         repo_type="dataset",
-        operations=[
-            CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)
-        ],
+        operations=[CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)],
         commit_message=commit_message,
         parent_commit=parent_commit,
         token=HF_TOKEN,
@@ -277,9 +274,7 @@ def record_test_attempt(username: str, score: float) -> int:
         ).to_pandas()
         matches = df.index[df["username"] == username].tolist()
         if not matches:
-            raise LookupError(
-                f"user {username!r} is not in the participants dataset"
-            )
+            raise LookupError(f"user {username!r} is not in the participants dataset")
         idx = matches[0]
         scores = parse_test_score(df.at[idx, "test_score"])
         attempt = max((int(k) for k in scores), default=0) + 1
@@ -302,7 +297,7 @@ def record_test_attempt(username: str, score: float) -> int:
                 raise
             last_conflict = exc
             # Jittered exponential backoff: 50ms · 2^retry · [0.5, 1.5).
-            time.sleep(0.05 * (2 ** retry) * (0.5 + random.random()))
+            time.sleep(0.05 * (2**retry) * (0.5 + random.random()))
     raise RuntimeError(
         f"could not record test attempt after {_COMMIT_MAX_RETRIES} retries"
     ) from last_conflict

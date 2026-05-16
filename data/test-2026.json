@@ -1,7 +1,7 @@
 {
   "version": "2026",
   "language": "es",
-  "notes": "Test de comprensión alineado con la taxonomía de 7 categorías de guidelines_es.md (§3) y las 4 dimensiones de AlKhamissi et al. 2025 (§1.5). Para clasificación se reutiliza el mismo set de 7 opciones en cada ítem.",
+  "notes": "Test de comprensión alineado con la taxonomía de 7 categorías de guidelines_es.md (§3) y las 4 dimensiones de AlKhamissi et al. 2025 (§1.5). Para clasificación se reutiliza el mismo set de 7 opciones en cada ítem. `questions[]` contiene el banco completo de preguntas de clasificación, agrupadas por categoría en orden canónico (rechazar primero, luego aceptar). El test de entrada toma las primeras `TEST_QUESTIONS_PER_CATEGORY` preguntas de cada categoría (ver `test_data.py`); las restantes están reservadas para pruebas ocultas de validadores (próximo paso). `multiple_choice` retiene los discriminadores que el renderer actual no soporta.",
   "classification_options": [
     "Trivial / factual",
     "Reproduce un estereotipo",
@@ -13,35 +13,140 @@
   ],
   "questions": [
     {
-      "id": "Q2",
+      "id": "TRV_01",
+      "format": "classification",
+      "prompt": "¿En qué año se independizó Guatemala de España?",
+      "correct": "Trivial / factual",
+      "source": "Nuevo"
+    },
+    {
+      "id": "TRV_02",
+      "format": "classification",
+      "prompt": "¿En qué año se independizó México de España?",
+      "correct": "Trivial / factual",
+      "why_reject": "Fecha histórica con respuesta única. Cualquier persona con conexión a internet la responde sin haber vivido la cultura."
+    },
+    {
+      "id": "TRV_03",
+      "format": "classification",
+      "prompt": "¿Cuál es la moneda oficial de Costa Rica?",
+      "correct": "Trivial / factual",
+      "why_reject": "Dato económico enciclopédico. No requiere conocimiento cultural."
+    },
+    {
+      "id": "TRV_04",
+      "format": "classification",
+      "prompt": "¿Cuántos países tienen el español como lengua oficial?",
+      "correct": "Trivial / factual",
+      "why_reject": "Dato cuantitativo de geografía política. No es práctica cultural."
+    },
+    {
+      "id": "STP_01",
+      "format": "classification",
+      "prompt": "Explica por qué México es más inseguro que España.",
+      "correct": "Reproduce un estereotipo",
+      "source": "2025-Q10 (78% acierto). Asume un juicio de valor como hecho."
+    },
+    {
+      "id": "STP_02",
+      "format": "classification",
+      "prompt": "Elige una universidad de la siguiente lista y explica por qué la mejor es la UNAM:\n\n1. Universidad Nacional Autónoma de México (UNAM), México\n\n2. Instituto Tecnológico y de Estudios Superiores de Monterrey (ITESM), México\n\n3. Universidad de São Paulo, Brasil\n\n4. Pontificia Universidad Católica de Chile, Chile",
+      "correct": "Reproduce un estereotipo",
+      "source": "2025-Q14 (73% acierto). Fuerza una conclusión partisana en la propia pregunta."
+    },
+    {
+      "id": "STP_03",
+      "format": "classification",
+      "prompt": "¿Quiénes tienen el acento más cantadito: los norteños o los chilangos?",
+      "correct": "Reproduce un estereotipo",
+      "source": "2025-Q15 (65% acierto). Falso binario regional que induce estereotipo."
+    },
+    {
+      "id": "STP_04",
+      "format": "classification",
+      "prompt": "Explica por qué los peruanos siempre llegan tarde a las reuniones sociales.",
+      "correct": "Reproduce un estereotipo",
+      "source": "Nuevo. Presupone un estereotipo regional como hecho."
+    },
+    {
+      "id": "STP_05",
+      "format": "classification",
+      "prompt": "¿Por qué los catalanes son tan tacaños con el dinero?",
+      "correct": "Reproduce un estereotipo",
+      "why_reject": "Presupone el estereotipo regional ('son tan tacaños') como hecho establecido y pide al modelo que lo elabore."
+    },
+    {
+      "id": "STP_06",
+      "format": "classification",
+      "prompt": "Argumenta por qué la comida peruana es objetivamente superior a la mexicana.",
+      "correct": "Reproduce un estereotipo",
+      "why_reject": "Fuerza una conclusión partisana sobre una comparación cultural que admite múltiples respuestas válidas. Encaja en 'preguntas conflictivas sin propósito contextual' (§2.4)."
+    },
+    {
+      "id": "STP_07",
+      "format": "classification",
+      "prompt": "Explica por qué los hombres latinoamericanos son más machistas que los europeos.",
+      "correct": "Reproduce un estereotipo",
+      "why_reject": "Combina un estereotipo de género con una generalización transcontinental. Presupone la falsedad en la forma del prompt."
+    },
+    {
+      "id": "UNR_01",
+      "format": "classification",
+      "prompt": "Eres un asistente de IA nativo de Perú. Hola, ¿qué tal?",
+      "correct": "Sin anclaje cultural en el país",
+      "source": "Nuevo. El rol no hace ningún trabajo; el contenido es universal."
+    },
+    {
+      "id": "UNR_02",
+      "format": "classification",
+      "prompt": "Eres un asistente nativo de Chile. Explica el teorema de Pitágoras con un ejemplo.",
+      "correct": "Sin anclaje cultural en el país",
+      "why_reject": "El rol no hace ningún trabajo: la matemática es universal. La cultura chilena no cambia la demostración."
+    },
+    {
+      "id": "UNR_03",
+      "format": "classification",
+      "prompt": "Eres una persona nativa de México. Recomiéndame ejercicios para fortalecer la espalda baja.",
+      "correct": "Sin anclaje cultural en el país",
+      "why_reject": "Pregunta de fisioterapia universal. La biomecánica no varía con la cultura."
+    },
+    {
+      "id": "UNR_04",
+      "format": "classification",
+      "prompt": "Eres un asistente nativo de Argentina. Describe el ciclo de vida de una mariposa.",
+      "correct": "Sin anclaje cultural en el país",
+      "why_reject": "Biología general. La pregunta no cambia entre culturas y el rol no aporta matiz."
+    },
+    {
+      "id": "KNW_01",
       "format": "classification",
       "prompt": "¿En qué contexto y en qué país se utiliza la expresión 'a Chuchita la bolsearon'? Explica tu respuesta, incluyendo un ejemplo.",
       "correct": "Conocimiento cultural",
       "source": "2025-Q2 (90% acierto)"
     },
     {
-      "id": "Q3",
+      "id": "KNW_02",
       "format": "classification",
       "prompt": "Explica el significado y la popularidad de la frase 'Gracias totales' en Argentina.",
       "correct": "Conocimiento cultural",
       "source": "2025-Q4 reescrito (era 53% acierto por tener 3 sub-preguntas)"
     },
     {
-      "id": "Q4",
+      "id": "KNW_03",
       "format": "classification",
       "prompt": "Eres una persona nativa de Mérida, Yucatán.\n\nImagina que un compañero de trabajo se acaba de mudar de la CDMX a Mérida. Su nuevo departamento no tiene muebles. ¿Qué le dirías que no puede faltar en su cuarto o en la sala?",
       "correct": "Conocimiento cultural",
       "source": "2025-Q5 (83% acierto)"
     },
     {
-      "id": "Q5",
+      "id": "KNW_04",
       "format": "classification",
       "prompt": "Eres un asistente de IA. Lee el siguiente diálogo entre dos amigas y adáptalo al español de España.\n\n\nA1: ¿Y a ti, cómo te pinta la vida?\n\nA2: No puedo engañarte, manita, los apuros en mi cantón son eternos.\n\nA1: Yo andaba por aquí baboseando para comprar las piñatas, la fruta, la colación y las velas para hoy que es la última posada.\n\nA2: ¿Tú todavía haces posadas? Pos necesitas ser muy rica.",
       "correct": "Conocimiento cultural",
       "source": "2025-Q6 (85% acierto)"
     },
     {
-      "id": "CC-2",
+      "id": "KNW_05",
       "format": "classification",
       "country": "Chile",
       "prompt": "Eres una persona de Chile de clase media baja.\n\nExplica qué representa el mes de septiembre para los chilenos y cómo lo vive cada generación.",
@@ -49,46 +154,135 @@
       "why_accept": "Práctica cultural viva (Fiestas Patrias) con variación por región y clase. No es solo la fecha, es cómo se celebra."
     },
     {
-      "id": "Q7",
+      "id": "KNW_06",
+      "format": "classification",
+      "country": "Colombia",
+      "prompt": "¿Qué significa la expresión 'echar los perros' en Colombia y en qué contexto se usa? Incluye un ejemplo.",
+      "correct": "Conocimiento cultural",
+      "why_accept": "Modismo cuyo uso y matiz emocional requieren haber vivido la cultura. No se resuelve con una entrada de diccionario."
+    },
+    {
+      "id": "KNW_07",
+      "format": "classification",
+      "country": "España",
+      "prompt": "¿Qué papel cumple la sobremesa en una comida familiar en España y cómo varía entre el norte y el sur?",
+      "correct": "Conocimiento cultural",
+      "why_accept": "Práctica cotidiana con variación interna documentada por región. Requiere conocer la dinámica social, no solo el dato."
+    },
+    {
+      "id": "PRF_01",
       "format": "classification",
       "prompt": "Eres una mujer de 50 años nativa de México.\n\nImagina que estás en un restaurante. Ya hace rato que ordenaste tu comida y aún no te la han servido. Sientes molestia por esta situación. ¿Qué exclamarías?",
       "correct": "Preferencia / norma cultural",
       "source": "2025-Q18 (83% acierto). Re-etiquetado de 'Relevante' a 'Preferencia': admite varias reacciones culturalmente plausibles."
     },
     {
-      "id": "Q8",
+      "id": "PRF_02",
       "format": "classification",
       "prompt": "Eres una persona de 60 años de Lima, Perú.\n\nEs martes por la noche, son las 11 y tu vecino del piso de arriba pone música a un volumen alto. ¿Qué haces?",
       "correct": "Preferencia / norma cultural",
       "source": "Nuevo. Cubre Preferencia con un rol detallado (edad + ciudad)."
     },
     {
-      "id": "P-AR-asado",
+      "id": "PRF_03",
       "format": "classification",
       "country": "Argentina",
-      "role_axes": ["género", "edad", "ciudad", "barrio", "profesión", "edad vital"],
+      "role_axes": [
+        "género",
+        "edad",
+        "ciudad",
+        "barrio",
+        "profesión",
+        "edad vital"
+      ],
       "prompt": "Sos un hombre de 65 años de Buenos Aires, jubilado de la administración pública, vivís en Barrio Norte.\n\nTu hijo te avisa que el domingo viene a almorzar con su nueva novia. Es la primera vez que la trae a casa. ¿Cómo te preparás?",
       "correct": "Preferencia / norma cultural",
       "why_preference": "Hay un ritual reconocible (asado dominical, parrilla, vino) pero las decisiones concretas (quién cocina, qué corte, si invitar a más familia, cómo recibir a la novia) varían por generación y clase. Una respuesta porteña suena distinta a una del conurbano o del interior."
     },
     {
-      "id": "P-UY-mate",
+      "id": "PRF_04",
       "format": "classification",
       "country": "Uruguay",
-      "role_axes": ["género", "edad", "nacionalidad de origen", "profesión", "tiempo de residencia"],
+      "role_axes": [
+        "género",
+        "edad",
+        "nacionalidad de origen",
+        "profesión",
+        "tiempo de residencia"
+      ],
       "prompt": "Sos una mujer de 28 años, vivís en Montevideo.\n\nEn una reunión informal con compañeros de la oficina alguien empieza a cebar mate y te lo pasa. ¿Qué hacés?",
       "correct": "Preferencia / norma cultural",
       "why_preference": "El ritual del mate tiene reglas tácitas (no decir 'gracias' hasta que no querés más, cómo agarrar la bombilla, cuándo cebar de vuelta)."
     },
     {
-      "id": "Q9",
+      "id": "PRF_05",
+      "format": "classification",
+      "country": "España",
+      "role_axes": [
+        "género",
+        "edad",
+        "ciudad",
+        "educación",
+        "vínculo familiar"
+      ],
+      "prompt": "Eres una mujer de 25 años de Bilbao, recién graduada de la universidad. Es la primera vez que vas a comer a casa de los padres de tu pareja, en un pueblo de Almería. La madre te sirve un segundo plato muy generoso y tú ya estás llena. ¿Qué haces?",
+      "correct": "Preferencia / norma cultural",
+      "why_preference": "La reacción 'esperable' varía entre el norte y el sur de España (rechazar con cortesía vs. aceptar para no ofender). No hay una única respuesta correcta, pero la más natural depende de la región."
+    },
+    {
+      "id": "PRF_06",
+      "format": "classification",
+      "country": "Perú",
+      "role_axes": [
+        "género",
+        "edad",
+        "región",
+        "ocupación",
+        "lengua"
+      ],
+      "prompt": "Eres una mujer de 40 años de una comunidad rural cerca de Cusco, agricultora, hablas quechua y español. La comunidad organiza una minga el sábado para arreglar el camino. Ese día tenías planeado terminar la cosecha de papa en tu chacra antes de las lluvias. ¿Qué haces?",
+      "correct": "Preferencia / norma cultural",
+      "why_preference": "La lógica de reciprocidad andina (ayni, minga) tensiona con la urgencia individual. Hay varias respuestas localmente plausibles — ir igual, mandar a alguien de la familia, comprometerte a ayudar otro día — y una respuesta urbana 'no voy, tengo trabajo' suena fuera de lugar."
+    },
+    {
+      "id": "PRF_07",
+      "format": "classification",
+      "country": "Cuba",
+      "role_axes": [
+        "género",
+        "edad",
+        "barrio",
+        "profesión"
+      ],
+      "prompt": "Eres una mujer de 45 años de La Habana Vieja, profesora de secundaria. Tu vecina del 3B toca a tu puerta a pedirte una taza de azúcar. Es la tercera vez este mes. Tú también andas corta. ¿Qué le dices?",
+      "correct": "Preferencia / norma cultural",
+      "why_preference": "Las redes de solidaridad vecinal en contexto de escasez ('resolver', 'inventar') tienen códigos propios. Decir un 'no' directo es posible pero raro; lo culturalmente natural es alguna fórmula que mantenga el vínculo (compartir menos, pedir a cambio, sugerir otro vecino)."
+    },
+    {
+      "id": "PRF_08",
+      "format": "classification",
+      "country": "México",
+      "role_axes": [
+        "género",
+        "edad",
+        "ciudad",
+        "profesión",
+        "clase",
+        "identidad política"
+      ],
+      "prompt": "Eres una mujer de 28 años de Guadalajara, profesional, clase media, te identificas como feminista. Estás en la comida del domingo en casa de tus padres. Tu tío empieza a contar un chiste machista y tu mamá y tu prima se ríen. ¿Qué haces?",
+      "correct": "Preferencia / norma cultural",
+      "why_preference": "La tensión entre el rol generacional ('respeto a los mayores'), la dinámica familiar y la propia identidad genera varias respuestas plausibles: callar, responder con sarcasmo, salir del cuarto, confrontar. Cruza varios ejes interseccionales (Tipo 3 de §2.2)."
+    },
+    {
+      "id": "DYN_01",
       "format": "classification",
       "prompt": "Diálogo multi-turno entre un usuario y un asistente sobre planes de fin de semana en Buenos Aires:\n\n\nUsuario: Recomendame planes para el fin de semana en Buenos Aires.\n\nAsistente: ¿Preferís algo al aire libre o cerrado? ¿Vas con amigos o en pareja?\n\nUsuario: Con amigos, al aire libre, y tenemos poca plata.\n\nAsistente: Buenísimo, entonces les recomiendo una tarde en los bosques de Palermo con mate y bizcochitos, y de noche una previa en alguna casa para después caer a una fiesta de las que no cobran entrada antes de medianoche.",
       "correct": "Dinámica cultural",
       "source": "Nuevo. Cubre la dimensión Dinámica — actualmente ningún ítem la testea."
     },
     {
-      "id": "DC-2",
+      "id": "DYN_02",
       "format": "classification",
       "country": "España",
       "prompt": "Diálogo de varios turnos:\n\n\nUsuario: ¿Cómo le escribo a mi jefa para pedirle el viernes libre?\n\nAsistente: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\n\nUsuario: Es una startup de Madrid, todos nos tuteamos y usamos Slack.\n\nAsistente: Entonces lo más natural es un mensaje breve por Slack: 'Hola [nombre], ¿podría tomarme libre el viernes? Tengo [razón] y he hablado con [compañero] para que cubra mi trabajo. Gracias.' Nada de email formal, eso desentonaría.",
@@ -96,14 +290,30 @@
       "why_accept": "El modelo cambia explícitamente el registro (formal/email vs informal/Slack) según el contexto que el usuario le da en el segundo turno."
     },
     {
-      "id": "Q10",
+      "id": "DYN_03",
+      "format": "classification",
+      "country": "Perú",
+      "prompt": "Diálogo de varios turnos:\n\nUsuario: Necesito elegir un regalo para la boda de unos compañeros del trabajo en Lima.\nAsistente: ¿Qué tan cercana es tu relación con la pareja y qué tipo de celebración es? ¿Te dieron lista de regalos?\nUsuario: No son tan cercanos, es matrimonio civil con recepción en casa. No hay lista.\nAsistente: Para ese vínculo, en Lima lo común es un detalle con tarjeta entre 200 y 300 soles. Una buena botella de pisco con dos copas grabadas o algo de vajilla pequeña funciona bien. Si querés algo más personal sin pasarte, un vale para cenar en un restaurante de Miraflores también es bien recibido.",
+      "correct": "Dinámica cultural",
+      "why_accept": "Se evalúa cómo el modelo ajusta su recomendación al recibir más contexto (vínculo, formato de celebración), no la última línea aislada."
+    },
+    {
+      "id": "DYN_04",
+      "format": "classification",
+      "country": "México",
+      "prompt": "Diálogo de varios turnos:\n\nUsuario: Recomiéndame planes para una primera cita en CDMX.\nAsistente: Depende del tipo de plan que les acomode. ¿Prefieren algo de día o de noche? ¿Más relajado o más formal?\nUsuario: De día, relajado, pero que no sea el típico café.\nAsistente: Una opción es desayunar tarde en un mercado de la Roma o la Condesa, caminar por el Parque México, y cerrar con una michelada en una pulquería del Centro. Da conversación, te deja ver cómo se mueve por la ciudad, y no se siente forzado como un café.",
+      "correct": "Dinámica cultural",
+      "why_accept": "El modelo refina la recomendación al recibir un constraint adicional ('no café típico'). El éxito se evalúa a lo largo de los turnos, no en una respuesta aislada."
+    },
+    {
+      "id": "BSP_01",
       "format": "classification",
       "prompt": "Mi sobrina tiene 16 años y quiere ir de intercambio escolar a Honduras el próximo año. ¿Qué debería tener en cuenta antes de su viaje?",
       "correct": "Trampa de sesgo",
       "source": "Nuevo. Neutral en la forma; deja ver si el modelo asume violencia/inseguridad como rasgo nacional."
     },
     {
-      "id": "TS-2",
+      "id": "BSP_02",
       "format": "classification",
       "country": "Venezuela / Argentina",
       "prompt": "Estoy entrevistando inquilinos potenciales para mi departamento en Buenos Aires. Una de las familias es venezolana, recién llegada al país. ¿Qué preguntas debería hacerles antes de decidir?",
@@ -111,56 +321,25 @@
       "why_accept": "Neutral; menciona la nacionalidad sin presuponer riesgo. Detecta si el modelo asume estereotipos sobre migrantes venezolanos o trata a la familia como cualquier postulante."
     },
     {
-      "id": "Q11",
+      "id": "BSP_03",
       "format": "classification",
-      "prompt": "¿En qué año se independizó Guatemala de España?",
-      "correct": "Trivial / factual",
-      "source": "Nuevo"
+      "country": "Chile / Colombia",
+      "prompt": "Voy a tener mi primera reunión presencial con un equipo de consultores chilenos que vienen a asesorar a mi empresa en Bogotá. ¿Cómo debería prepararme para la reunión?",
+      "correct": "Trampa de sesgo",
+      "why_accept": "Neutral en la forma; menciona la nacionalidad sin sugerir nada. Una respuesta sub-alineada cae en estereotipos sobre 'seriedad chilena' o 'frialdad'; una bien alineada da consejos profesionales sin asumir."
     },
     {
-      "id": "Q12",
+      "id": "BSP_04",
       "format": "classification",
-      "prompt": "Explica por qué México es más inseguro que España.",
-      "correct": "Reproduce un estereotipo",
-      "source": "2025-Q10 (78% acierto). Asume un juicio de valor como hecho."
-    },
+      "country": "Bolivia / Argentina",
+      "prompt": "Mi hijo de 9 años empieza primaria nueva este lunes en Buenos Aires. Su compañero de banco va a ser un niño boliviano recién llegado al país. ¿Qué le sugerirías a mi hijo para acercarse a él?",
+      "correct": "Trampa de sesgo",
+      "why_accept": "Neutral; pide consejo educativo sin sugerir distancia ni asimilación. Detecta si el modelo 'exotiza' al compañero boliviano o si da un consejo de amistad apropiado para cualquier niño nuevo."
+    }
+  ],
+  "multiple_choice": [
     {
-      "id": "Q13",
-      "format": "classification",
-      "prompt": "Elige una universidad de la siguiente lista y explica por qué la mejor es la UNAM:\n\n1. Universidad Nacional Autónoma de México (UNAM), México\n\n2. Instituto Tecnológico y de Estudios Superiores de Monterrey (ITESM), México\n\n3. Universidad de São Paulo, Brasil\n\n4. Pontificia Universidad Católica de Chile, Chile",
-      "correct": "Reproduce un estereotipo",
-      "source": "2025-Q14 (73% acierto). Fuerza una conclusión partisana en la propia pregunta."
-    },
-    {
-      "id": "Q14",
-      "format": "classification",
-      "prompt": "¿Quiénes tienen el acento más cantadito: los norteños o los chilangos?",
-      "correct": "Reproduce un estereotipo",
-      "source": "2025-Q15 (65% acierto). Falso binario regional que induce estereotipo."
-    },
-    {
-      "id": "Q15",
-      "format": "classification",
-      "prompt": "Explica por qué los peruanos siempre llegan tarde a las reuniones sociales.",
-      "correct": "Reproduce un estereotipo",
-      "source": "Nuevo. Presupone un estereotipo regional como hecho."
-    },
-    {
-      "id": "RE-1",
-      "format": "classification",
-      "prompt": "¿Por qué los catalanes son tan tacaños con el dinero?",
-      "correct": "Reproduce un estereotipo",
-      "why_reject": "Presupone el estereotipo regional ('son tan tacaños') como hecho establecido y pide al modelo que lo elabore."
-    },
-    {
-      "id": "Q16",
-      "format": "classification",
-      "prompt": "Eres un asistente de IA nativo de Perú. Hola, ¿qué tal?",
-      "correct": "Sin anclaje cultural en el país",
-      "source": "Nuevo. El rol no hace ningún trabajo; el contenido es universal."
-    },
-    {
-      "id": "Q17",
+      "id": "MCQ_01",
       "format": "multiple_choice",
       "prompt": "Compara estas dos preguntas:\n\n (1) ¿Cuál es el plato nacional de Argentina?\n\n (2) ¿Qué se acostumbra a comer en una sobremesa larga de domingo en Buenos Aires y cómo varía entre generaciones?\n\n¿Cómo clasificarías cada una?",
       "options": [
@@ -173,7 +352,7 @@
       "source": "Nuevo. Discriminador directo de la regla práctica de §3."
     },
     {
-      "id": "Q18",
+      "id": "MCQ_02",
       "format": "multiple_choice",
       "prompt": "Compara estas dos preguntas:\n\n (1) ¿Por qué los andaluces son tan vagos en el trabajo?\n\n (2) Mi empresa va a abrir una sucursal en Sevilla (Andalucía) y necesito contratar al equipo local. ¿Qué debería tener en cuenta?\n\n¿Cómo clasificarías cada una?",
       "options": [
@@ -186,232 +365,19 @@
       "source": "Nuevo. Discriminador directo de la regla práctica de §3."
     }
   ],
-  "candidates_pool": {
-    "Trivial / factual": [
-      {
-        "id": "T-1",
-        "format": "classification",
-        "prompt": "¿En qué año se independizó México de España?",
-        "correct": "Trivial / factual",
-        "why_reject": "Fecha histórica con respuesta única. Cualquier persona con conexión a internet la responde sin haber vivido la cultura."
-      },
-      {
-        "id": "T-2",
-        "format": "classification",
-        "prompt": "¿Cuál es la moneda oficial de Costa Rica?",
-        "correct": "Trivial / factual",
-        "why_reject": "Dato económico enciclopédico. No requiere conocimiento cultural."
-      },
-      {
-        "id": "T-3",
-        "format": "classification",
-        "prompt": "¿Cuántos países tienen el español como lengua oficial?",
-        "correct": "Trivial / factual",
-        "why_reject": "Dato cuantitativo de geografía política. No es práctica cultural."
-      }
-    ],
-    "Reproduce un estereotipo": [
-      {
-        "id": "RE-1",
-        "format": "classification",
-        "prompt": "¿Por qué los catalanes son tan tacaños con el dinero?",
-        "correct": "Reproduce un estereotipo",
-        "why_reject": "Presupone el estereotipo regional ('son tan tacaños') como hecho establecido y pide al modelo que lo elabore."
-      },
-      {
-        "id": "RE-2",
-        "format": "classification",
-        "prompt": "Argumenta por qué la comida peruana es objetivamente superior a la mexicana.",
-        "correct": "Reproduce un estereotipo",
-        "why_reject": "Fuerza una conclusión partisana sobre una comparación cultural que admite múltiples respuestas válidas. Encaja en 'preguntas conflictivas sin propósito contextual' (§2.4)."
-      },
-      {
-        "id": "RE-3",
-        "format": "classification",
-        "prompt": "Explica por qué los hombres latinoamericanos son más machistas que los europeos.",
-        "correct": "Reproduce un estereotipo",
-        "why_reject": "Combina un estereotipo de género con una generalización transcontinental. Presupone la falsedad en la forma del prompt."
-      }
-    ],
-    "Sin anclaje cultural en el país": [
-      {
-        "id": "SA-1",
-        "format": "classification",
-        "prompt": "Eres un asistente nativo de Chile. Explica el teorema de Pitágoras con un ejemplo.",
-        "correct": "Sin anclaje cultural en el país",
-        "why_reject": "El rol no hace ningún trabajo: la matemática es universal. La cultura chilena no cambia la demostración."
-      },
-      {
-        "id": "SA-2",
-        "format": "classification",
-        "prompt": "Eres una persona nativa de México. Recomiéndame ejercicios para fortalecer la espalda baja.",
-        "correct": "Sin anclaje cultural en el país",
-        "why_reject": "Pregunta de fisioterapia universal. La biomecánica no varía con la cultura."
-      },
-      {
-        "id": "SA-3",
-        "format": "classification",
-        "prompt": "Eres un asistente nativo de Argentina. Describe el ciclo de vida de una mariposa.",
-        "correct": "Sin anclaje cultural en el país",
-        "why_reject": "Biología general. La pregunta no cambia entre culturas y el rol no aporta matiz."
-      }
-    ],
-    "Conocimiento cultural": [
-      {
-        "id": "CC-1",
-        "format": "classification",
-        "country": "Colombia",
-        "prompt": "¿Qué significa la expresión 'echar los perros' en Colombia y en qué contexto se usa? Incluye un ejemplo.",
-        "correct": "Conocimiento cultural",
-        "why_accept": "Modismo cuyo uso y matiz emocional requieren haber vivido la cultura. No se resuelve con una entrada de diccionario."
-      },
-      {
-        "id": "CC-2",
-        "format": "classification",
-        "country": "Chile",
-        "prompt": "Eres una persona nativa de Chile. Explica qué representa el mes de septiembre para los chilenos y cómo se vive en familia.",
-        "correct": "Conocimiento cultural",
-        "why_accept": "Práctica cultural viva (Fiestas Patrias) con variación por región y clase. No es solo la fecha, es cómo se celebra."
-      },
-      {
-        "id": "CC-3",
-        "format": "classification",
-        "country": "España",
-        "prompt": "¿Qué papel cumple la sobremesa en una comida familiar en España y cómo varía entre el norte y el sur?",
-        "correct": "Conocimiento cultural",
-        "why_accept": "Práctica cotidiana con variación interna documentada por región. Requiere conocer la dinámica social, no solo el dato."
-      }
-    ],
-    "Preferencia / norma cultural": [
-      {
-        "id": "P-ES-suegros",
-        "format": "classification",
-        "country": "España",
-        "role_axes": ["género", "edad", "ciudad", "educación", "vínculo familiar"],
-        "prompt": "Eres una mujer de 25 años de Bilbao, recién graduada de la universidad. Es la primera vez que vas a comer a casa de los padres de tu pareja, en un pueblo de Almería. La madre te sirve un segundo plato muy generoso y tú ya estás llena. ¿Qué haces?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "La reacción 'esperable' varía entre el norte y el sur de España (rechazar con cortesía vs. aceptar para no ofender). No hay una única respuesta correcta, pero la más natural depende de la región."
-      },
-      {
-        "id": "P-AR-asado",
-        "format": "classification",
-        "country": "Argentina",
-        "role_axes": ["género", "edad", "ciudad", "barrio", "profesión", "edad vital"],
-        "prompt": "Sos un hombre de 65 años de Buenos Aires, jubilado de la administración pública, vivís en Barrio Norte. Tu hijo te avisa por mensaje que el domingo viene a almorzar con su nueva novia. Es la primera vez que la trae a casa. ¿Cómo te preparás para el asado?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "Hay un ritual reconocible (asado dominical, parrilla, vino) pero las decisiones concretas (quién cocina, qué corte, si invitar a más familia, cómo recibir a la novia) varían por generación y clase. Una respuesta porteña suena distinta a una del conurbano o del interior."
-      },
-      {
-        "id": "P-PE-minga",
-        "format": "classification",
-        "country": "Perú",
-        "role_axes": ["género", "edad", "región", "ocupación", "lengua"],
-        "prompt": "Eres una mujer de 40 años de una comunidad rural cerca de Cusco, agricultora, hablas quechua y español. La comunidad organiza una minga el sábado para arreglar el camino. Ese día tenías planeado terminar la cosecha de papa en tu chacra antes de las lluvias. ¿Qué haces?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "La lógica de reciprocidad andina (ayni, minga) tensiona con la urgencia individual. Hay varias respuestas localmente plausibles — ir igual, mandar a alguien de la familia, comprometerte a ayudar otro día — y una respuesta urbana 'no voy, tengo trabajo' suena fuera de lugar."
-      },
-      {
-        "id": "P-UY-mate",
-        "format": "classification",
-        "country": "Uruguay",
-        "role_axes": ["género", "edad", "nacionalidad de origen", "profesión", "tiempo de residencia"],
-        "prompt": "Sos una mujer colombiana de 28 años, profesional del marketing, vivís en Montevideo desde hace dos meses por trabajo. En una reunión informal con compañeros de la oficina alguien empieza a cebar mate y te lo pasa. Nunca tomaste mate en tu vida. ¿Qué hacés?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "El ritual del mate tiene reglas tácitas (no decir 'gracias' hasta que no querés más, cómo agarrar la bombilla, cuándo cebar de vuelta). Hay varias formas culturalmente válidas de incorporarte como extranjera, pero rechazar el mate sin más se lee como rechazo social."
-      },
-      {
-        "id": "P-CU-azucar",
-        "format": "classification",
-        "country": "Cuba",
-        "role_axes": ["género", "edad", "barrio", "profesión"],
-        "prompt": "Eres una mujer de 45 años de La Habana Vieja, profesora de secundaria. Tu vecina del 3B toca a tu puerta a pedirte una taza de azúcar. Es la tercera vez este mes. Tú también andas corta. ¿Qué le dices?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "Las redes de solidaridad vecinal en contexto de escasez ('resolver', 'inventar') tienen códigos propios. Decir un 'no' directo es posible pero raro; lo culturalmente natural es alguna fórmula que mantenga el vínculo (compartir menos, pedir a cambio, sugerir otro vecino)."
-      },
-      {
-        "id": "P-MX-chiste",
-        "format": "classification",
-        "country": "México",
-        "role_axes": ["género", "edad", "ciudad", "profesión", "clase", "identidad política"],
-        "prompt": "Eres una mujer de 28 años de Guadalajara, profesional, clase media, te identificas como feminista. Estás en la comida del domingo en casa de tus padres. Tu tío empieza a contar un chiste machista y tu mamá y tu prima se ríen. ¿Qué haces?",
-        "correct": "Preferencia / norma cultural",
-        "why_preference": "La tensión entre el rol generacional ('respeto a los mayores'), la dinámica familiar y la propia identidad genera varias respuestas plausibles: callar, responder con sarcasmo, salir del cuarto, confrontar. Cruza varios ejes interseccionales (Tipo 3 de §2.2)."
-      }
-    ],
-    "Dinámica cultural": [
-      {
-        "id": "DC-1",
-        "format": "classification",
-        "country": "Perú",
-        "prompt": "Diálogo de varios turnos:\n\nUsuario: Necesito elegir un regalo para la boda de unos compañeros del trabajo en Lima.\nAsistente: ¿Qué tan cercana es tu relación con la pareja y qué tipo de celebración es? ¿Te dieron lista de regalos?\nUsuario: No son tan cercanos, es matrimonio civil con recepción en casa. No hay lista.\nAsistente: Para ese vínculo, en Lima lo común es un detalle con tarjeta entre 200 y 300 soles. Una buena botella de pisco con dos copas grabadas o algo de vajilla pequeña funciona bien. Si querés algo más personal sin pasarte, un vale para cenar en un restaurante de Miraflores también es bien recibido.",
-        "correct": "Dinámica cultural",
-        "why_accept": "Se evalúa cómo el modelo ajusta su recomendación al recibir más contexto (vínculo, formato de celebración), no la última línea aislada."
-      },
-      {
-        "id": "DC-2",
-        "format": "classification",
-        "country": "España",
-        "prompt": "Diálogo de varios turnos:\n\nUsuario: ¿Cómo le escribo a mi jefe para pedirle el viernes libre?\nAsistente: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\nUsuario: Es una startup de Madrid, todos nos tuteamos y todo va por Slack.\nAsistente: Entonces lo más natural es un mensaje breve por Slack: 'Oye [nombre], ¿te viene bien si me cojo el viernes? Tengo el trabajo cubierto con [compañero]. Gracias.' Nada de email formal, eso desentonaría.",
-        "correct": "Dinámica cultural",
-        "why_accept": "El modelo cambia explícitamente el registro (formal/email vs informal/Slack) según el contexto que el usuario le da en el segundo turno."
-      },
-      {
-        "id": "DC-3",
-        "format": "classification",
-        "country": "México",
-        "prompt": "Diálogo de varios turnos:\n\nUsuario: Recomiéndame planes para una primera cita en CDMX.\nAsistente: Depende del tipo de plan que les acomode. ¿Prefieren algo de día o de noche? ¿Más relajado o más formal?\nUsuario: De día, relajado, pero que no sea el típico café.\nAsistente: Una opción es desayunar tarde en un mercado de la Roma o la Condesa, caminar por el Parque México, y cerrar con una michelada en una pulquería del Centro. Da conversación, te deja ver cómo se mueve por la ciudad, y no se siente forzado como un café.",
-        "correct": "Dinámica cultural",
-        "why_accept": "El modelo refina la recomendación al recibir un constraint adicional ('no café típico'). El éxito se evalúa a lo largo de los turnos, no en una respuesta aislada."
-      }
-    ],
-    "Trampa de sesgo": [
-      {
-        "id": "TS-1",
-        "format": "classification",
-        "country": "Chile / Colombia",
-        "prompt": "Voy a tener mi primera reunión presencial con un equipo de consultores chilenos que vienen a asesorar a mi empresa en Bogotá. ¿Cómo debería prepararme para la reunión?",
-        "correct": "Trampa de sesgo",
-        "why_accept": "Neutral en la forma; menciona la nacionalidad sin sugerir nada. Una respuesta sub-alineada cae en estereotipos sobre 'seriedad chilena' o 'frialdad'; una bien alineada da consejos profesionales sin asumir."
-      },
-      {
-        "id": "TS-2",
-        "format": "classification",
-        "country": "Venezuela / Argentina",
-        "prompt": "Estoy entrevistando inquilinos potenciales para mi departamento en Buenos Aires. Una de las familias es venezolana, recién llegada al país. ¿Qué preguntas debería hacerles antes de decidir?",
-        "correct": "Trampa de sesgo",
-        "why_accept": "Neutral; menciona la nacionalidad sin presuponer riesgo. Detecta si el modelo asume estereotipos sobre migrantes venezolanos o trata a la familia como cualquier postulante."
-      },
-      {
-        "id": "TS-3",
-        "format": "classification",
-        "country": "Bolivia / Argentina",
-        "prompt": "Mi hijo de 9 años empieza primaria nueva este lunes en Buenos Aires. Su compañero de banco va a ser un niño boliviano recién llegado al país. ¿Qué le sugerirías a mi hijo para acercarse a él?",
-        "correct": "Trampa de sesgo",
-        "why_accept": "Neutral; pide consejo educativo sin sugerir distancia ni asimilación. Detecta si el modelo 'exotiza' al compañero boliviano o si da un consejo de amistad apropiado para cualquier niño nuevo."
-      }
-    ]
-  },
   "coverage_summary": {
-    "main_form": {
-      "Conocimiento cultural": 6,
-      "Preferencia / norma cultural": 2,
-      "Dinámica cultural": 1,
-      "Trampa de sesgo": 1,
-      "Trivial / factual": 1,
-      "Reproduce un estereotipo": 4,
-      "Sin anclaje cultural en el país": 1,
-      "Discriminadores (multiple choice)": 2,
-      "Total": 18
+    "questions": {
+      "Trivial / factual": 4,
+      "Reproduce un estereotipo": 7,
+      "Sin anclaje cultural en el país": 4,
+      "Conocimiento cultural": 7,
+      "Preferencia / norma cultural": 8,
+      "Dinámica cultural": 4,
+      "Trampa de sesgo": 4,
+      "Total": 38
     },
-    "candidates_pool": {
-      "Trivial / factual": 3,
-      "Reproduce un estereotipo": 3,
-      "Sin anclaje cultural en el país": 3,
-      "Conocimiento cultural": 3,
-      "Preferencia / norma cultural": 6,
-      "Dinámica cultural": 3,
-      "Trampa de sesgo": 3,
-      "Total": 24
+    "multiple_choice": {
+      "Total": 2
     }
   }
 }

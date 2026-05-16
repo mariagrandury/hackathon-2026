@@ -34,9 +34,12 @@ import pandas as pd
 log = logging.getLogger("hackathon")
 
 from data import (
+    ACCEPT_CHOICES,
     EMPTY_VALIDATION,
     EMPTY_VOTE,
+    REJECT_CHOICES,
     TEST_PASS_THRESHOLD,
+    VALIDATION_CHOICES,
     best_test_score,
     country_counts,
     country_display,
@@ -54,13 +57,11 @@ from test_data import grade as grade_test
 from test_data import load_questions as load_test_questions
 
 VOTE_CHOICES = ("a", "b", "both", "none")
-# Validation buckets: three reject buckets and the four AlKhamissi et al.
-# (2025) cultural dimensions used as accept buckets. The validation tab shows
-# them as two side-by-side radios (Reject | Accept). `data.is_fully_validated`
-# treats any of the four accept choices as a positive validation.
-REJECT_CHOICES = ("trivial", "stereotype", "unrelated")
-ACCEPT_CHOICES = ("knowledge", "preference", "dynamics", "bias_probe")
-VALIDATION_CHOICES = REJECT_CHOICES + ACCEPT_CHOICES
+# Validation buckets (REJECT_CHOICES + ACCEPT_CHOICES) are defined in data.py
+# so non-Gradio modules can share the canonical ordering. The validation tab
+# renders them as two side-by-side radios (Reject | Accept); the entry test
+# does the same. `data.is_fully_validated` treats any of the four accept
+# choices as a positive validation.
 LEADERBOARD_GOAL = 100
 DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
