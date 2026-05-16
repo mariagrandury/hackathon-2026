@@ -48,7 +48,7 @@ def _participants_df(scores_by_user: dict[str, str]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {"username": u, "language": "es", "country": "es",
-             "gmail": "", "test_score": scores}
+             "test_score": scores}
             for u, scores in scores_by_user.items()
         ]
     )

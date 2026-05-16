@@ -298,8 +298,7 @@ def install_app_stubs() -> None:
     import app
     import data
     def fake_info(username, df=None):
-        return {"username": username, "language": "es",
-                "country": "es", "gmail": ""}
+        return {"username": username, "language": "es", "country": "es"}
     app.participant_info = fake_info
     data.participant_info = fake_info
 

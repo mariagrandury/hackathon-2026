@@ -5,7 +5,8 @@ Writes two PNGs into ``data/``:
   * ``participants_overview.png`` — language and country from the
     ``hackathon_participants`` dataset, plus a pie chart per demographic
     question (pronouns, education, field, year of birth, NLP level, first
-    SomosNLP event) joined in from the Eventbrite registration CSV by email.
+    SomosNLP event) joined in from the Eventbrite registration CSV by HF
+    username (case-insensitive — email is no longer pushed to the Hub).
   * ``prompts_overview.png`` — the same views as the app's Leaderboard tab:
     overall totals, the per-user ranking (top 10, stacked), and per-country
     validation status, plus the unique-annotator count.
@@ -50,6 +51,7 @@ from data import (
     load_prompts_df,
     ranking_df,
 )
+from import_participants_info import _order_by_lang, clean_username
 
 REPO_DIR = _REPO_ROOT
 OUT_DIR = REPO_DIR / "data"
@@ -272,8 +274,14 @@ def merge_demographics(
     participants: pd.DataFrame, csv_path: Path | None
 ) -> tuple[pd.DataFrame, list[str]]:
     """Join the Eventbrite demographic answers onto the participants table by
-    email. Returns ``(merged_df, available_question_labels)`` — a question is
-    "available" only if its columns were found and someone answered."""
+    HF username. Returns ``(merged_df, available_question_labels)`` — a
+    question is "available" only if its columns were found and someone
+    answered.
+
+    Earlier versions joined on email, but email is no longer pushed to the
+    Hub (privacy). The HF username lives in both sources, so we derive the
+    cleaned username from the Eventbrite columns the same way
+    ``import_participants_info`` does and use that as the key."""
     if csv_path is None or not Path(csv_path).exists():
         return participants, []
 
@@ -283,7 +291,16 @@ def merge_demographics(
         return participants, []
     hack = raw[raw["Ticket Type"].str.startswith("Hackathon", na=False)].copy()
     hack["Order Date"] = pd.to_datetime(hack["Order Date"], errors="coerce", utc=True)
-    hack["_email"] = hack["Email"].fillna("").astype(str).str.strip()
+
+    # Replicate the importer's HF-username extraction so the join key here
+    # matches what landed in the participants dataset.
+    hf_cols = _order_by_lang(
+        [c for c in hack.columns if "Hugging Face" in c or "HuggingFace" in c]
+    )
+    pick_first = lambda r: next((str(v).strip() for v in r if str(v).strip()), "")
+    hack["_username"] = (
+        hack[hf_cols].fillna("").apply(pick_first, axis=1).apply(clean_username)
+    )
 
     available: list[str] = []
     for label, needles, _norm, _multi in DEMOGRAPHICS:
@@ -292,15 +309,20 @@ def merge_demographics(
         if (hack[label].astype(str).str.strip() != "").any():
             available.append(label)
 
-    # One row per email, latest registration wins — same dedup rule as
-    # import_participants_info.py, so the join lines up with the 86.
+    # One row per username, latest registration wins — same dedup rule as
+    # the importer (which uses case-insensitive matching; mirror that here).
+    hack["_key"] = hack["_username"].str.lower()
+    hack = hack[hack["_key"] != ""]
     demo = (
         hack.sort_values("Order Date")
-        .drop_duplicates("_email", keep="last")
-        .set_index("_email")
+        .drop_duplicates("_key", keep="last")
+        .set_index("_key")
     )
     labels = [d[0] for d in DEMOGRAPHICS]
-    merged = participants.join(demo[labels], on="gmail")
+    # Join on lowercased username so case differences between Eventbrite
+    # answers and the canonical dataset don't break the merge.
+    join_key = participants["username"].str.lower()
+    merged = participants.join(demo[labels], on=join_key.rename("_key"))
     return merged, available
 
 

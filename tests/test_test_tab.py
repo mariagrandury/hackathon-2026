@@ -40,7 +40,7 @@ def _prof(username: str) -> SimpleNamespace:
 _PARTS_FRESH = pd.DataFrame(
     [
         {"username": "alice", "language": "es", "country": "es",
-         "gmail": "", "test_score": "{}"},
+         "test_score": "{}"},
     ]
 )
 
@@ -50,7 +50,7 @@ def _parts_with_score(username: str, score: float) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {"username": username, "language": "es", "country": "es",
-             "gmail": "", "test_score": json.dumps({"1": score})},
+             "test_score": json.dumps({"1": score})},
         ]
     )
 

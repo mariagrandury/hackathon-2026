@@ -235,8 +235,11 @@ def build_participants(csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             f"({len(valid)} participant(s))."
         )
 
+    # ``gmail`` stays in ``valid`` for the missing-HF sidecar / local debugging
+    # but is intentionally NOT included in the participants table that gets
+    # pushed to the Hub — emails shouldn't live in a shared dataset.
     participants = (
-        valid[["username", "language", "country", "gmail"]]
+        valid[["username", "language", "country"]]
         .sort_values(["country", "language", "username"])
         .reset_index(drop=True)
     )

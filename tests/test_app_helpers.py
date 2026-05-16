@@ -111,9 +111,9 @@ class Translations(unittest.TestCase):
 
 
 _PARTS = pd.DataFrame([
-    {"username": "alice", "language": "es", "country": "es", "gmail": ""},
-    {"username": "bruno", "language": "pt", "country": "br", "gmail": ""},
-    {"username": "weird", "language": "kr", "country": "kr", "gmail": ""},  # unsupported lang
+    {"username": "alice", "language": "es", "country": "es"},
+    {"username": "bruno", "language": "pt", "country": "br"},
+    {"username": "weird", "language": "kr", "country": "kr"},  # unsupported lang
 ])
 
 

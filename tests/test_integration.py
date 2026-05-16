@@ -55,14 +55,14 @@ PARTICIPANTS_DF = pd.DataFrame(
         # Country filter (#3 from TODO.md) only shows a user prompts grounded
         # in their own country. Tests need ≥3 participants per country we
         # want to "fully validate" a prompt in.
-        {"username": "mariagrandury", "language": "es", "country": "es", "gmail": "maria@x"},
-        {"username": "evan-es",       "language": "es", "country": "es", "gmail": "evan@x"},
-        {"username": "alice-cl",      "language": "es", "country": "cl", "gmail": "alice@x"},
-        {"username": "alice2-cl",     "language": "es", "country": "cl", "gmail": "alice2@x"},
-        {"username": "alice3-cl",     "language": "es", "country": "cl", "gmail": "alice3@x"},
-        {"username": "bruno-br",      "language": "pt", "country": "br", "gmail": "bruno@x"},
-        {"username": "carla-co",      "language": "es", "country": "co", "gmail": "carla@x"},
-        {"username": "diogo-pt",      "language": "pt", "country": "pt", "gmail": "diogo@x"},
+        {"username": "mariagrandury", "language": "es", "country": "es"},
+        {"username": "evan-es",       "language": "es", "country": "es"},
+        {"username": "alice-cl",      "language": "es", "country": "cl"},
+        {"username": "alice2-cl",     "language": "es", "country": "cl"},
+        {"username": "alice3-cl",     "language": "es", "country": "cl"},
+        {"username": "bruno-br",      "language": "pt", "country": "br"},
+        {"username": "carla-co",      "language": "es", "country": "co"},
+        {"username": "diogo-pt",      "language": "pt", "country": "pt"},
     ]
 )
 

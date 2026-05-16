@@ -187,7 +187,9 @@ PARTICIPANTS_FEATURES = Features(
         "username": Value("string"),
         "language": Value("string"),
         "country": Value("string"),
-        "gmail": Value("string"),
+        # Email is intentionally NOT pushed to the Hub. The importer
+        # collects it locally (so the missing-HF report can name attendees)
+        # and inspect_hf_dataset joins demographics on ``username`` instead.
         "test_score": Value("string"),
     }
 )

@@ -83,8 +83,14 @@ Both private, owned by `mariagrandury`. Schema is the source of truth in
 
 | Dataset                                | Columns                                                                                                                                         |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`, `test_score`                                                                                        |
+| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `test_score`                                                                                                 |
 | `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}` |
+
+Email is intentionally NOT in the participants schema: `import_participants_info.py`
+keeps it locally (in the missing-HF sidecar CSV that organisers use to chase
+attendees who didn't fill in their HF handle) but drops it before
+`push_to_hub`. `data/inspect_hf_dataset.py` joins demographics by HF
+username instead of by email.
 
 `test_score` is a JSON-encoded `{attempt_number_str: score_float}` map
 (e.g. `'{"1": 0.85, "2": 0.95}'`); empty sentinel is `"{}"`. It's a string

@@ -122,7 +122,7 @@ class ParseTestScore(unittest.TestCase):
 def _participants_with_scores(scores_by_user: dict[str, str]) -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"username": u, "language": "es", "country": "es", "gmail": "",
+            {"username": u, "language": "es", "country": "es",
              "test_score": s}
             for u, s in scores_by_user.items()
         ]
