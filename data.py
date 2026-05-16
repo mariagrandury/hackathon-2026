@@ -8,13 +8,18 @@ configured as a secret. Locally, drop a ``.env`` file at the repo root with
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import random
+import time
 from typing import Optional
 
 import pandas as pd
 from datasets import Dataset, Features, Value, load_dataset
 from dotenv import load_dotenv
+from huggingface_hub import CommitOperationAdd, HfApi
+from huggingface_hub.utils import HfHubHTTPError
 
 PARTICIPANTS_REPO = "mariagrandury/hackathon_participants"
 PROMPTS_REPO = "mariagrandury/cultural_preferences"
@@ -155,8 +160,11 @@ def push_prompts_df(
     )
 
 
-def participant_info(username: str) -> Optional[dict]:
-    df = load_participants_df()
+def participant_info(
+    username: str, df: pd.DataFrame | None = None
+) -> Optional[dict]:
+    if df is None:
+        df = load_participants_df()
     matches = df[df["username"] == username]
     if matches.empty:
         return None
@@ -186,29 +194,118 @@ def best_test_score(username: str | None, df: pd.DataFrame | None = None) -> flo
     return max(scores.values()) if scores else 0.0
 
 
-def has_passed_test(username: str | None) -> bool:
-    return best_test_score(username) >= TEST_PASS_THRESHOLD
+# How many times to retry the commit-style update of the participants
+# dataset when another writer landed in between. Hackathon contention is
+# bounded by Hub commit throughput (~hundreds of ms each), so a handful
+# of retries with jittered exponential backoff is enough in practice.
+_COMMIT_MAX_RETRIES = 8
+
+
+def _participants_parquet_path(api: HfApi) -> str:
+    """Locate the single Parquet shard of the participants dataset on the
+    Hub. ``Dataset.push_to_hub`` writes one
+    ``data/train-XXXXX-of-XXXXX.parquet`` for a sub-1000-row table; we
+    replace that same path on commit-style updates so we don't leave orphan
+    shards behind."""
+    files = api.list_repo_files(
+        repo_id=PARTICIPANTS_REPO, repo_type="dataset", token=HF_TOKEN
+    )
+    parquets = [f for f in files if f.endswith(".parquet")]
+    if len(parquets) != 1:
+        raise RuntimeError(
+            f"expected exactly one parquet shard in {PARTICIPANTS_REPO}, "
+            f"got {len(parquets)}: {parquets!r}"
+        )
+    return parquets[0]
+
+
+def _commit_participants(
+    df: pd.DataFrame,
+    *,
+    api: HfApi,
+    path_in_repo: str,
+    parent_commit: str,
+    commit_message: str,
+) -> None:
+    """Replace the participants Parquet shard at ``path_in_repo`` with the
+    encoded ``df``, requiring the repo to still be at ``parent_commit``.
+    Raises ``HfHubHTTPError`` with status 412 if another writer landed
+    first — caller is expected to re-read and retry."""
+    buf = io.BytesIO()
+    Dataset.from_pandas(
+        df, preserve_index=False, features=PARTICIPANTS_FEATURES
+    ).to_parquet(buf)
+    buf.seek(0)
+    api.create_commit(
+        repo_id=PARTICIPANTS_REPO,
+        repo_type="dataset",
+        operations=[
+            CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)
+        ],
+        commit_message=commit_message,
+        parent_commit=parent_commit,
+        token=HF_TOKEN,
+    )
 
 
 def record_test_attempt(username: str, score: float) -> int:
-    """Append ``score`` as the next attempt for ``username`` and push the
-    participants dataset. Returns the new attempt number (1-indexed).
+    """Append ``score`` as the next attempt for ``username`` via a
+    commit-style update: read the participants dataset at a specific
+    revision, mutate the user's row, then commit with
+    ``parent_commit=<that revision>``. If another writer landed in between
+    the Hub returns 412, we reload at the new HEAD and retry — so two
+    concurrent submitters retry instead of clobbering each other's scores.
 
-    Raises ``LookupError`` if the user isn't a registered participant."""
-    df = load_participants_df()
-    matches = df.index[df["username"] == username].tolist()
-    if not matches:
-        raise LookupError(f"user {username!r} is not in the participants dataset")
-    idx = matches[0]
-    scores = parse_test_score(df.at[idx, "test_score"])
-    attempt = (max((int(k) for k in scores), default=0) + 1)
-    scores[str(attempt)] = float(score)
-    df.at[idx, "test_score"] = json.dumps(scores)
-    push_participants_df(
-        df,
-        commit_message=f"{username} took the test (attempt {attempt}): {score:.2f}",
-    )
-    return attempt
+    Returns the new attempt number (1-indexed). Raises ``LookupError`` if
+    the user isn't a registered participant; ``RuntimeError`` if all
+    retries kept losing the race (shouldn't happen for hackathon-scale
+    contention)."""
+    api = HfApi(token=HF_TOKEN)
+    path_in_repo = _participants_parquet_path(api)
+    last_conflict: HfHubHTTPError | None = None
+    for retry in range(_COMMIT_MAX_RETRIES):
+        info = api.dataset_info(repo_id=PARTICIPANTS_REPO, token=HF_TOKEN)
+        parent_sha = info.sha
+        # Load at the exact SHA we're about to use as parent_commit. Varying
+        # ``revision`` bypasses datasets' in-process cache so we always see
+        # the latest writes.
+        df = load_dataset(
+            PARTICIPANTS_REPO,
+            split="train",
+            token=HF_TOKEN,
+            revision=parent_sha,
+        ).to_pandas()
+        matches = df.index[df["username"] == username].tolist()
+        if not matches:
+            raise LookupError(
+                f"user {username!r} is not in the participants dataset"
+            )
+        idx = matches[0]
+        scores = parse_test_score(df.at[idx, "test_score"])
+        attempt = max((int(k) for k in scores), default=0) + 1
+        scores[str(attempt)] = float(score)
+        df.at[idx, "test_score"] = json.dumps(scores)
+        try:
+            _commit_participants(
+                df,
+                api=api,
+                path_in_repo=path_in_repo,
+                parent_commit=parent_sha,
+                commit_message=(
+                    f"{username} took the test (attempt {attempt}): {score:.2f}"
+                ),
+            )
+            return attempt
+        except HfHubHTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status != 412:
+                raise
+            last_conflict = exc
+            # Jittered exponential backoff: 50ms · 2^retry · [0.5, 1.5).
+            time.sleep(0.05 * (2 ** retry) * (0.5 + random.random()))
+    raise RuntimeError(
+        f"could not record test attempt after {_COMMIT_MAX_RETRIES} retries"
+    ) from last_conflict
 
 
 def is_fully_validated(row) -> bool:

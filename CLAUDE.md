@@ -11,16 +11,34 @@ answers. All state lives in two private datasets on the Hub.
 
 ### Architecture
 
-- **`app.py`** — Gradio Blocks UI. Five tabs: Annotation Guidelines, Prompt
-  Writing, Prompt Validation, Answer Voting, Leaderboard. Auth uses HF OAuth
-  (`hf_oauth: true` in `README.md`); the logged-in HF username is the canonical
-  identity used for every write. The Leaderboard tab is lazy: its
-  `cultural_preferences` read + plot rebuild only fires on `tab.select`, not
-  on `demo.load`, so page-loads don't pay the leaderboard cost.
+- **`app.py`** — Gradio Blocks UI. Six tabs: Annotation Guidelines, Entry
+  Test, Prompt Writing, Prompt Validation, Answer Voting, Leaderboard. Auth
+  uses HF OAuth (`hf_oauth: true` in `README.md`); the logged-in HF username
+  is the canonical identity used for every write. The Writing / Validation /
+  Voting tabs are gated behind the Entry Test — `init_ui` sets them
+  `visible=False` until the user's best score in `hackathon_participants`
+  is ≥ `TEST_PASS_THRESHOLD` (0.95). `submit_test` reveals them in-session
+  on a passing run; passing is sticky because `best_test_score` takes the
+  max across attempts. The Leaderboard tab is lazy: its
+  `cultural_preferences` read + plot rebuild only fires on `tab.select`,
+  not on `demo.load`, so page-loads don't pay the leaderboard cost.
 - **`data.py`** — pure data layer. Schemas (`PARTICIPANTS_FEATURES`,
-  `PROMPTS_FEATURES`), I/O (`load_/push_prompts_df`, `participant_info`), row
-  predicates (`is_fully_validated`, `has_answers`), and aggregations for the
-  leaderboard (`user_stats`, `country_counts`, `ranking_df`).
+  `PROMPTS_FEATURES`), I/O (`load_/push_prompts_df`, `participant_info`,
+  `record_test_attempt`), row predicates (`is_fully_validated`,
+  `has_answers`), test-score helpers (`best_test_score`, `parse_test_score`),
+  and aggregations for the leaderboard (`user_stats`, `country_counts`,
+  `ranking_df`). `record_test_attempt` is a commit-style update: it reads
+  the participants table at a specific revision, mutates the user's row,
+  and `create_commit`s with `parent_commit=<that revision>`; on 412 it
+  refetches and retries, so concurrent test submitters don't clobber each
+  other.
+- **`test_data.py`** — question bank + grader for the Entry Test. Reads
+  `data/test-2026.json` (currently Spanish-only; other languages reuse it).
+  `load_questions` returns classification questions only — `multiple_choice`
+  ones are dropped because the test renders each Q as a single radio. The
+  Spanish display labels in `correct` are mapped to canonical bucket keys
+  (`trivial` / `stereotype` / `unrelated` / `knowledge` / `preference` /
+  `dynamics` / `bias_probe`) that match `VALIDATION_CHOICES` in `app.py`.
 - **`seed_datasets.py`** — one-shot script that overwrites both private
   datasets with dummy rows in the current schema. Used for local testing
   without v0 data.
@@ -38,7 +56,9 @@ answers. All state lives in two private datasets on the Hub.
   on `--push` overwrites the dataset. Always writes a
   `<input>_missing_hf.csv` sidecar listing attendees whose HF username was
   blank or unrecognized so organisers can chase them. Multi-language form
-  columns are resolved ES > PT > EN.
+  columns are resolved ES > PT > EN. Before pushing it reads the existing
+  dataset and preserves `test_score` per username, so a re-import to refresh
+  the participant list doesn't wipe out scores already earned.
 - **`guidelines.md`** — placeholder annotation guidelines, rendered as the
   first tab.
 - **`requirements.txt`** — pins `gradio[oauth]==4.44.1`,
@@ -53,8 +73,14 @@ Both private, owned by `mariagrandury`. Schema is the source of truth in
 
 | Dataset                                | Columns                                                                                                                                         |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`                                                                                                      |
+| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `gmail`, `test_score`                                                                                        |
 | `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}` |
+
+`test_score` is a JSON-encoded `{attempt_number_str: score_float}` map
+(e.g. `'{"1": 0.85, "2": 0.95}'`); empty sentinel is `"{}"`. It's a string
+column because `datasets.Features` has no open-ended dict type, and the
+dict is small. `best_test_score` returns the max across attempts, so a
+later worse retry can't lock a passing user out.
 
 Both `prompt_validation_i` and `answer_chosen_i` are `{choice: str, username: str}`.
 
@@ -77,6 +103,14 @@ yet"; a slot with a reject-bucket choice is "validated as unfit".
 These are user-facing rules baked into the handlers — preserve them when
 refactoring:
 
+- The Writing / Validation / Voting tabs are **hidden until the user
+  passes the Entry Test** (best score ≥ `TEST_PASS_THRESHOLD`). The gate
+  is **UI-only and intentionally so** — write handlers don't re-check.
+  Hackathon participants are trusted; a determined user could still
+  call the Gradio API directly. Known and deferred; see the Entry-test
+  follow-ups section under Future steps. If we ever need to harden it,
+  add a server-side `has_passed_test` check to `save_prompt`, the
+  validation save, and the vote handlers.
 - A user **cannot validate their own prompt**, but **can vote on their own
   prompt** once it's fully validated.
 - Validation slot picker skips prompts the user authored or already validated
@@ -143,28 +177,45 @@ are intentionally different.
 2. In the Space settings, add an `HF_TOKEN` secret with read+write access to
    the two private `mariagrandury/...` datasets.
 3. Don't push this whole repo. The Space mirror is curated:
-   `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `requirements.txt`,
-   `README.md`, `guidelines/`, `images/` into a sibling clone of the Space repo
-   (default `../2026-space-cultural-preferences`). Commit + push from that clone.
+   `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `test_data.py`,
+   `requirements.txt`, `README.md`, `guidelines/`, `images/`, and the single
+   file `data/test-2026.json` (the Entry Test question bank — the rest of
+   `data/` stays out) into a sibling clone of the Space repo (default
+   `../2026-space-cultural-preferences`). Commit + push from that clone.
    `CLAUDE.md`, `seed_datasets.py`, `import_dpo_pairs.py`,
-   `import_participants_info.py`, `test_integration.py`, `data/`, `reports/`,
-   `.env*` deliberately stay out of the Space.
+   `import_participants_info.py`, `test_integration.py`, the rest of
+   `data/`, `reports/`, `.env*` deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.
 
 ## Caveats
 
-- **Race conditions on writes.** Validation and voting both do `load_dataset`
-  → mutate one cell → `push_to_hub`. Two concurrent writers can pick the same
-  slot and the second push wins. Acceptable for the hackathon, but it is the
-  next thing to fix if the Space gets contended.
+- **Race conditions on prompts writes.** Validation and voting both do
+  `load_dataset` → mutate one cell → `push_to_hub`. Two concurrent writers
+  can pick the same slot and the second push wins. Acceptable for the
+  hackathon; the participants dataset already uses the commit-style pattern
+  described below — the prompts dataset is next on the list if the Space
+  gets contended.
+- **Test-attempt writes are commit-style.** `record_test_attempt` reads
+  the participants table at a specific revision and `create_commit`s with
+  `parent_commit=<that revision>`; on a 412 it refetches HEAD and retries
+  (jittered exponential backoff, up to `_COMMIT_MAX_RETRIES = 8`). So
+  concurrent test submissions retry instead of clobbering. Trade-off: each
+  attempt rewrites the participants Parquet shard, and the retry loop
+  assumes there's exactly one shard (`_participants_parquet_path` raises
+  otherwise). If the dataset ever grows past a single shard, that helper
+  needs updating.
 - **`seed_datasets.py` is destructive.** It calls `push_to_hub` with a fresh
   Dataset, overwriting whatever was there. Don't run it casually once real
   prompts are flowing in.
-- **Schema migrations.** Any change to `PROMPTS_FEATURES` in `data.py` must be
-  matched by a re-seed (or a one-off migration). `push_prompts_df` enforces
-  `features=PROMPTS_FEATURES` so old-shape rows will fail to push.
+- **Schema migrations.** Any change to `PROMPTS_FEATURES` or
+  `PARTICIPANTS_FEATURES` in `data.py` must be matched by a re-seed (or a
+  one-off migration) — the push helpers enforce `features=…` so old-shape
+  rows will fail to push. Before deploying a schema change to the
+  participants table, run `import_participants_info.py --push` to refresh
+  the live dataset with the new column (it preserves `test_score` per
+  username on re-import).
 - **OAuth requires the Space.** `gr.LoginButton` only does a real OAuth
   exchange when the app is hosted on a Hugging Face Space with
   `hf_oauth: true`. Locally, Gradio mocks the profile from the
@@ -207,9 +258,11 @@ In rough priority order:
    reaches three positive validations, picks a model pair and fills in the
    answers. Until that exists, the voting tab is empty for any prompt the
    organisers haven't manually answered.
-2. **Atomic row updates.** Replace the load-mutate-push pattern with
-   `huggingface_hub` commit-style updates so concurrent writers don't clobber
-   each other.
+2. **Atomic row updates for prompts.** The participants dataset already uses
+   `huggingface_hub` commit-style updates with `parent_commit` for optimistic
+   concurrency (see `record_test_attempt` and `_commit_participants`). Port
+   the same pattern to validation and vote writes on `cultural_preferences`
+   so concurrent writers don't clobber each other.
 3. **Pagination / caching for leaderboard.** Cache `load_prompts_df()` for a
    few seconds, or push aggregations into a separate small dataset that the
    Space refreshes on a schedule.
@@ -237,6 +290,35 @@ In rough priority order:
      end-to-end without an HF token.
 8. **Audit log.** Optional column tracking _who changed what when_ for each
    slot, so disputed validations/votes can be traced.
+
+### Entry-test follow-ups (known, deferred)
+
+Small issues we know about and have explicitly chosen to ship with. None
+block the hackathon; revisit when there's time.
+
+- **UI-only gate.** Writing / Validation / Voting are hidden via
+  `gr.Tab(visible=False)`, but the handlers stay wired and the write
+  helpers (`save_prompt`, validation save, vote handlers) don't check
+  `best_test_score`. A user who knows the Gradio API can submit anyway.
+  Intentional for a trusted-audience hackathon; if abuse shows up, add a
+  server-side `has_passed_test` check to those handlers.
+- **95%-of-20 cliff.** `data/test-2026.json` has 22 questions but only 20
+  are `classification` (the 2 `multiple_choice` ones are silently dropped
+  in `load_questions`). With `TEST_PASS_THRESHOLD = 0.95`, the effective
+  pass mark is **19/20** — missing a single question fails. Either lower
+  the threshold (e.g. 0.9 → 18/20), grow the question bank past 20
+  classifications, or render the multiple-choice questions properly.
+- **EN/PT participants get the Spanish question bank.** `load_questions`
+  ignores its `lang` argument and always reads `test-2026.json` (Spanish
+  prompts). UI strings around the test are translated, but the question
+  prompts themselves are ES. Add `test-2026-en.json` / `test-2026-pt.json`
+  and key the lookup off `lang`.
+- **Robustness in `parse_test_score` / `record_test_attempt`.**
+  `parse_test_score` wraps `json.loads` in try/except but `float(v)` in
+  the comprehension isn't guarded; `record_test_attempt` does `int(k)`
+  on dict keys without guarding either. We control all writes today so
+  these can't fire in practice — but a corrupted cell would crash a page
+  load instead of degrading. Cheap to harden when convenient.
 
 ## Style and conventions
 

@@ -42,6 +42,7 @@ from data import (
     country_display,
     has_answers,
     is_fully_validated,
+    load_participants_df,
     load_prompts_df,
     participant_info,
     push_prompts_df,
@@ -774,8 +775,17 @@ def _test_radio_updates(
     return updates
 
 
-def load_test(lang: str, profile: gr.OAuthProfile | None):
+def load_test(
+    lang: str,
+    profile: gr.OAuthProfile | None,
+    participants_df=None,
+):
     """Shuffle questions and return updates for the test UI.
+
+    ``participants_df`` is optional: callers that have already loaded the
+    participants table (``init_ui``) pass it in so we don't re-download it
+    for the best-score lookup. The retake button doesn't have access to it
+    and falls back to a fresh load.
 
     Outputs (in order): ``questions_state``, ``intro_md``, ``status_md``,
     ``submit_btn``, ``retake_btn``, then ``MAX_TEST_QUESTIONS`` radios.
@@ -795,7 +805,7 @@ def load_test(lang: str, profile: gr.OAuthProfile | None):
         )
     status_lines = []
     if profile is not None:
-        best = best_test_score(profile.username)
+        best = best_test_score(profile.username, participants_df)
         if best > 0:
             status_lines.append(
                 s["test_status_best"].format(percent=int(round(best * 100)))
@@ -1258,20 +1268,26 @@ def init_ui(profile: gr.OAuthProfile | None):
     updates leaderboard labels."""
     lang = _resolve_language(profile)
     s = _t(lang)
+    # One participants-dataset load shared across this page-init —
+    # ``participant_info``, the gate check, and ``load_test`` all consume it.
+    # Without this they'd each call ``load_participants_df`` independently.
+    participants_df = load_participants_df() if profile is not None else None
     # Country-aware placeholder for the system_prompt textbox — uses the
     # actual default that will be substituted in if the user clicks Save
     # without filling it in.
-    info = participant_info(profile.username) if profile else None
+    info = (
+        participant_info(profile.username, participants_df) if profile else None
+    )
     default_sys = _default_system_prompt(lang, info.get("country") if info else None)
     sys_placeholder = default_sys or s["writing_system_placeholder"]
     # Gating: Writing / Validation / Voting only become available once the
     # user has scored above ``TEST_PASS_THRESHOLD`` on the entry test.
     passed = (
-        best_test_score(profile.username) >= TEST_PASS_THRESHOLD
+        best_test_score(profile.username, participants_df) >= TEST_PASS_THRESHOLD
         if profile is not None
         else False
     )
-    test_state = load_test(lang, profile)
+    test_state = load_test(lang, profile, participants_df)
     return (
         # Language state (drives every subsequent handler)
         lang,

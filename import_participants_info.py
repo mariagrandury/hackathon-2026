@@ -31,7 +31,13 @@ from pathlib import Path
 import pandas as pd
 from datasets import Dataset
 
-from data import HF_TOKEN, PARTICIPANTS_FEATURES, PARTICIPANTS_REPO
+from data import (
+    EMPTY_TEST_SCORE,
+    HF_TOKEN,
+    PARTICIPANTS_FEATURES,
+    PARTICIPANTS_REPO,
+    load_participants_df,
+)
 
 TICKET_TO_LANG = {
     "Hackathon (Español)": "es",
@@ -282,6 +288,27 @@ def main() -> None:
 
     if not HF_TOKEN:
         sys.exit("HF_TOKEN not set; cannot push.")
+
+    # Preserve existing test_score values: re-importing should refresh the
+    # participant list (new registrations, country fixes, …) without wiping
+    # out scores already earned. Unknown / newly-registered usernames start
+    # with the empty sentinel. If the dataset doesn't exist yet, or pre-dates
+    # the schema migration, fall back to all-empty.
+    existing_scores: dict[str, str] = {}
+    try:
+        existing = load_participants_df()
+        if "test_score" in existing.columns:
+            existing_scores = dict(
+                zip(
+                    existing["username"],
+                    existing["test_score"].fillna(EMPTY_TEST_SCORE),
+                )
+            )
+    except Exception as exc:
+        print(f"Note: could not load existing test_scores ({exc}); all rows start fresh.")
+    participants["test_score"] = participants["username"].map(
+        lambda u: existing_scores.get(u, EMPTY_TEST_SCORE)
+    )
 
     ds = Dataset.from_pandas(
         participants, preserve_index=False, features=PARTICIPANTS_FEATURES
