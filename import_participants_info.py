@@ -36,6 +36,7 @@ from data import (
     HF_TOKEN,
     PARTICIPANTS_FEATURES,
     PARTICIPANTS_REPO,
+    _cache_invalidate,
     load_participants_df,
 )
 
@@ -312,23 +313,70 @@ def main() -> None:
     # Preserve existing test_score values: re-importing should refresh the
     # participant list (new registrations, country fixes, …) without wiping
     # out scores already earned. Unknown / newly-registered usernames start
-    # with the empty sentinel. If the dataset doesn't exist yet, or pre-dates
-    # the schema migration, fall back to all-empty.
-    existing_scores: dict[str, str] = {}
-    try:
-        existing = load_participants_df()
-        if "test_score" in existing.columns:
-            existing_scores = dict(
-                zip(
-                    existing["username"],
-                    existing["test_score"].fillna(EMPTY_TEST_SCORE),
-                )
+    # with the empty sentinel. Defensive: read fresh (bypass our in-process
+    # cache), and abort if anything looks wrong instead of silently treating
+    # all scores as empty — silent fallback is how scores got wiped once.
+    _cache_invalidate(PARTICIPANTS_REPO)
+    existing = load_participants_df()
+    if "test_score" not in existing.columns:
+        # First push of the new schema — no existing scores to preserve.
+        print(
+            f"  existing dataset has no test_score column; "
+            f"all rows start at {EMPTY_TEST_SCORE!r}"
+        )
+        existing_scores: dict[str, str] = {}
+    else:
+        existing_scores = dict(
+            zip(
+                existing["username"],
+                existing["test_score"].fillna(EMPTY_TEST_SCORE),
             )
-    except Exception as exc:
-        print(f"Note: could not load existing test_scores ({exc}); all rows start fresh.")
-    participants["test_score"] = participants["username"].map(
-        lambda u: existing_scores.get(u, EMPTY_TEST_SCORE)
+        )
+    # Match case-insensitively too, since the Eventbrite form lets people
+    # type their HF handle in any case while the canonical dataset stores
+    # whatever case the latest registration used.
+    existing_scores_ci = {k.lower(): v for k, v in existing_scores.items() if k}
+    non_empty_existing = sum(
+        1 for v in existing_scores.values() if v and v != EMPTY_TEST_SCORE
     )
+    print(
+        f"  preserving {non_empty_existing} non-empty test_score(s) "
+        f"across {len(existing_scores)} existing user(s)"
+    )
+
+    def _lookup_score(username: str) -> str:
+        return (
+            existing_scores.get(username)
+            or existing_scores_ci.get(username.lower())
+            or EMPTY_TEST_SCORE
+        )
+
+    participants["test_score"] = participants["username"].map(_lookup_score)
+    preserved = sum(
+        1 for v in participants["test_score"] if v and v != EMPTY_TEST_SCORE
+    )
+
+    # Sanity guard: if the existing dataset had real scores but we're about
+    # to push without any of them surviving, refuse — something's wrong with
+    # the read or the case-matching, and the right move is to investigate,
+    # not to clobber.
+    if non_empty_existing > 0 and preserved == 0:
+        sys.exit(
+            f"REFUSING TO PUSH: read {non_empty_existing} non-empty test_score(s) "
+            f"from existing dataset, but 0 of them matched usernames in the new "
+            f"import. Push would wipe real scores. Re-run after investigating "
+            f"the username diff (likely a case-sensitivity or normalization issue)."
+        )
+    if non_empty_existing > 0 and preserved < non_empty_existing:
+        import time as _time
+        print(
+            f"  WARNING: {non_empty_existing - preserved} existing score(s) "
+            f"will be dropped (usernames in existing dataset not present in "
+            f"the new import). Press Ctrl-C in the next 5s to abort."
+        )
+        _time.sleep(5)
+
+    print(f"  pushing with {preserved} preserved test_score(s)")
 
     ds = Dataset.from_pandas(
         participants, preserve_index=False, features=PARTICIPANTS_FEATURES
