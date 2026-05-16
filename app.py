@@ -1188,8 +1188,12 @@ def submit_test(
             *noop,
         )
     score, raw, _max = grade_test(paired, lang)
+    # Past the unanswered check, every value in ``paired`` is a string —
+    # safe to drop the Optional and persist as ``{qid: answer}`` alongside
+    # the score for later per-question analysis.
+    responses: dict[str, str] = {qid: str(value) for qid, value in paired}
     try:
-        attempt = record_test_attempt(profile.username, score)
+        attempt = record_test_attempt(profile.username, score, responses)
     except LookupError:
         return (
             gr.update(

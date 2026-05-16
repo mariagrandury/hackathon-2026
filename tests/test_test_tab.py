@@ -59,16 +59,21 @@ def _parts_with_score(username: str, score: float) -> pd.DataFrame:
 # persisted (or skipped) the score per branch.
 class _RecordSpy:
     def __init__(self):
-        self.calls: list[tuple[str, float]] = []
+        self.calls: list[tuple[str, float, dict[str, str]]] = []
         self.next_attempt: int = 1
         self.raise_lookup_for: set[str] = set()
 
-    def __call__(self, username: str, score: float) -> int:
+    def __call__(
+        self,
+        username: str,
+        score: float,
+        responses: dict[str, str] | None = None,
+    ) -> int:
         if username in self.raise_lookup_for:
             raise LookupError(
                 f"user {username!r} is not in the participants dataset"
             )
-        self.calls.append((username, score))
+        self.calls.append((username, score, dict(responses or {})))
         attempt = self.next_attempt
         self.next_attempt += 1
         return attempt
@@ -246,9 +251,11 @@ class SubmitTestPerfect(unittest.TestCase):
         status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out
         # Recorded once with the perfect fraction.
         self.assertEqual(len(spy.calls), 1)
-        username, score = spy.calls[0]
+        username, score, responses = spy.calls[0]
         self.assertEqual(username, "alice")
         self.assertEqual(score, 1.0)
+        # Every question got a recorded response (qid → bucket).
+        self.assertEqual(set(responses), {q["id"] for q in questions} | {m["id"] for m in mcqs})
         # Passed message + Submit hidden + Retake shown + all three gated
         # tabs revealed.
         self.assertIn("16 / 16", status_upd.get("value"))
@@ -285,7 +292,7 @@ class SubmitTestFailed(unittest.TestCase):
         status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out
         # Recorded as a (negative) fraction.
         self.assertEqual(len(spy.calls), 1)
-        _user, score = spy.calls[0]
+        _user, score, _responses = spy.calls[0]
         self.assertLess(score, 0)
         # Failure message contains the needed mark.
         self.assertIn("12 / 16", status_upd.get("value"))

@@ -137,6 +137,31 @@ class HappyPath(unittest.TestCase):
         # Bob's untouched JSON should round-trip exactly.
         self.assertEqual(json.loads(bob_row), {"1": 0.5, "2": 0.7})
 
+    def test_responses_persisted_under_same_attempt_key(self):
+        # The new test_responses column should land under the same attempt
+        # key as test_score, so the two columns can be cross-indexed.
+        df = _participants_df({"alice": "{}"})
+        responses = {"CLF_01": "trivial", "CLF_02": "knowledge", "MCQ_01": "a"}
+        with _patch_io(df=df) as patches:
+            data.record_test_attempt("alice", 0.5, responses)
+        committed_df = patches.commit.call_args.args[0]
+        cell = committed_df.loc[committed_df["username"] == "alice", "test_responses"].iloc[0]
+        self.assertEqual(
+            json.loads(cell),
+            {"1": {"CLF_01": "trivial", "CLF_02": "knowledge", "MCQ_01": "a"}},
+        )
+
+    def test_responses_default_to_empty_when_omitted(self):
+        # Back-compat: existing call sites that only pass (username, score)
+        # should still work and land an empty per-question dict for that
+        # attempt rather than crashing.
+        df = _participants_df({"alice": "{}"})
+        with _patch_io(df=df) as patches:
+            data.record_test_attempt("alice", 0.5)
+        committed_df = patches.commit.call_args.args[0]
+        cell = committed_df.loc[committed_df["username"] == "alice", "test_responses"].iloc[0]
+        self.assertEqual(json.loads(cell), {"1": {}})
+
 
 class AttemptIncrement(unittest.TestCase):
 

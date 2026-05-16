@@ -149,6 +149,11 @@ EMPTY_VOTE = {"choice": "", "username": ""}
 # ``datasets.Features`` has no open-ended dict type, and the dict is small
 # enough that JSON encoding is fine.
 EMPTY_TEST_SCORE = "{}"
+# JSON-encoded ``{attempt_number_str: {question_id: chosen_answer}}``.
+# Keyed by the same attempt numbers as ``test_score`` so the two columns
+# can be cross-indexed for per-attempt analysis (mirroring the 2025
+# response analysis under data/analysis_test_2025.md).
+EMPTY_TEST_RESPONSES = "{}"
 
 # Pass mark for the entry test, expressed as a fraction of the max possible
 # raw score. The current grading scheme (see ``test_data.grade``) tops out
@@ -191,6 +196,7 @@ PARTICIPANTS_FEATURES = Features(
         # collects it locally (so the missing-HF report can name attendees)
         # and inspect_hf_dataset joins demographics on ``username`` instead.
         "test_score": Value("string"),
+        "test_responses": Value("string"),
     }
 )
 
@@ -352,6 +358,27 @@ def parse_test_score(raw: str | None) -> dict[str, float]:
     except (TypeError, ValueError):
         return {}
     return {str(k): float(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def parse_test_responses(raw: str | None) -> dict[str, dict[str, str]]:
+    """Mirror of ``parse_test_score`` for the ``test_responses`` column.
+
+    Returns ``{attempt_number_str: {question_id: chosen_answer}}``. An
+    unparseable / missing cell decays to an empty dict — same defensive
+    contract as ``parse_test_score``."""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(attempt): {str(qid): str(ans) for qid, ans in answers.items()}
+        for attempt, answers in data.items()
+        if isinstance(answers, dict)
+    }
 
 
 def best_test_score(username: str | None, df: pd.DataFrame | None = None) -> float:
@@ -564,8 +591,19 @@ def commit_prompts_with_cas(
     )
 
 
-def record_test_attempt(username: str, score: float) -> int:
-    """Append ``score`` as the next attempt for ``username`` via CAS.
+def record_test_attempt(
+    username: str,
+    score: float,
+    responses: dict[str, str] | None = None,
+) -> int:
+    """Append ``score`` (and optionally per-question ``responses``) as the
+    next attempt for ``username`` via CAS.
+
+    Writes both ``test_score`` and ``test_responses`` in the same commit
+    under the same attempt-number key, so the two columns stay aligned for
+    later cross-indexed analysis. ``responses`` is a ``{question_id:
+    chosen_answer}`` map; ``None`` (back-compat for older callers) is
+    treated as an empty dict.
 
     Returns the new attempt number (1-indexed). Raises ``LookupError`` if
     the user isn't a registered participant; ``RuntimeError`` if all
@@ -574,6 +612,7 @@ def record_test_attempt(username: str, score: float) -> int:
     api = _hf_api()
     path_in_repo = _participants_parquet_path(api)
     captured_attempt: list[int] = []
+    responses = responses or {}
 
     def fetch(_fresh: bool) -> tuple[str, pd.DataFrame]:
         # ``record_test_attempt`` writes are rare; bypass the cache entirely
@@ -599,6 +638,20 @@ def record_test_attempt(username: str, score: float) -> int:
         attempt = max((int(k) for k in scores), default=0) + 1
         scores[str(attempt)] = float(score)
         df.at[idx, "test_score"] = json.dumps(scores)
+        # Mirror the same write into test_responses. The column may be
+        # missing on older datasets that pre-date the schema migration;
+        # in that case we initialise it from EMPTY_TEST_RESPONSES so the
+        # commit always lands a complete row.
+        existing_responses_cell = (
+            df.at[idx, "test_responses"]
+            if "test_responses" in df.columns
+            else EMPTY_TEST_RESPONSES
+        )
+        all_responses = parse_test_responses(existing_responses_cell)
+        all_responses[str(attempt)] = dict(responses)
+        if "test_responses" not in df.columns:
+            df["test_responses"] = EMPTY_TEST_RESPONSES
+        df.at[idx, "test_responses"] = json.dumps(all_responses)
         captured_attempt.append(attempt)
         return df
 

@@ -83,7 +83,7 @@ Both private, owned by `mariagrandury`. Schema is the source of truth in
 
 | Dataset                                | Columns                                                                                                                                         |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `test_score`                                                                                                 |
+| `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `test_score`, `test_responses`                                                                               |
 | `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}` |
 
 Email is intentionally NOT in the participants schema: `import_participants_info.py`
@@ -91,6 +91,14 @@ keeps it locally (in the missing-HF sidecar CSV that organisers use to chase
 attendees who didn't fill in their HF handle) but drops it before
 `push_to_hub`. `data/inspect_hf_dataset.py` joins demographics by HF
 username instead of by email.
+
+`test_responses` mirrors `test_score`: same attempt-number keys, JSON-encoded
+as `{attempt_str: {question_id: chosen_answer}}`. Written in the same CAS
+commit as `test_score` (so the two columns can't skew). Lets us run a
+per-question accuracy analysis like the 2025 one under
+`data/analysis_test_2025.md`. The importer preserves both columns
+per-username on re-import, with the same case-insensitive fallback and
+non-empty-count safeguards.
 
 `test_score` is a JSON-encoded `{attempt_number_str: score_float}` map
 (e.g. `'{"1": 0.85, "2": 0.95}'`); empty sentinel is `"{}"`. It's a string

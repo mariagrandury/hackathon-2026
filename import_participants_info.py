@@ -35,6 +35,7 @@ import pandas as pd
 from datasets import Dataset
 
 from data import (
+    EMPTY_TEST_RESPONSES,
     EMPTY_TEST_SCORE,
     HF_TOKEN,
     PARTICIPANTS_FEATURES,
@@ -350,16 +351,15 @@ def main() -> None:
     if not HF_TOKEN:
         sys.exit("HF_TOKEN not set; cannot push.")
 
-    # Preserve existing test_score values: re-importing should refresh the
-    # participant list (new registrations, country fixes, …) without wiping
-    # out scores already earned. Unknown / newly-registered usernames start
-    # with the empty sentinel. Defensive: read fresh (bypass our in-process
-    # cache), and abort if anything looks wrong instead of silently treating
-    # all scores as empty — silent fallback is how scores got wiped once.
+    # Preserve existing test_score AND test_responses values: re-importing
+    # should refresh the participant list (new registrations, country fixes,
+    # …) without wiping out anything already recorded. Unknown /
+    # newly-registered usernames start with the empty sentinels. Defensive:
+    # read fresh (bypass our in-process cache), and abort if scores would
+    # be wiped — silent fallback is how scores got wiped once.
     _cache_invalidate(PARTICIPANTS_REPO)
     existing = load_participants_df()
     if "test_score" not in existing.columns:
-        # First push of the new schema — no existing scores to preserve.
         print(
             f"  existing dataset has no test_score column; "
             f"all rows start at {EMPTY_TEST_SCORE!r}"
@@ -372,51 +372,79 @@ def main() -> None:
                 existing["test_score"].fillna(EMPTY_TEST_SCORE),
             )
         )
+    if "test_responses" not in existing.columns:
+        print(
+            f"  existing dataset has no test_responses column; "
+            f"all rows start at {EMPTY_TEST_RESPONSES!r}"
+        )
+        existing_responses: dict[str, str] = {}
+    else:
+        existing_responses = dict(
+            zip(
+                existing["username"],
+                existing["test_responses"].fillna(EMPTY_TEST_RESPONSES),
+            )
+        )
     # Match case-insensitively too, since the Eventbrite form lets people
     # type their HF handle in any case while the canonical dataset stores
     # whatever case the latest registration used.
     existing_scores_ci = {k.lower(): v for k, v in existing_scores.items() if k}
-    non_empty_existing = sum(
+    existing_responses_ci = {k.lower(): v for k, v in existing_responses.items() if k}
+    non_empty_scores = sum(
         1 for v in existing_scores.values() if v and v != EMPTY_TEST_SCORE
     )
+    non_empty_responses = sum(
+        1 for v in existing_responses.values() if v and v != EMPTY_TEST_RESPONSES
+    )
     print(
-        f"  preserving {non_empty_existing} non-empty test_score(s) "
+        f"  preserving {non_empty_scores} non-empty test_score(s) "
+        f"and {non_empty_responses} non-empty test_responses "
         f"across {len(existing_scores)} existing user(s)"
     )
 
-    def _lookup_score(username: str) -> str:
-        return (
-            existing_scores.get(username)
-            or existing_scores_ci.get(username.lower())
-            or EMPTY_TEST_SCORE
-        )
+    def _lookup(name: str, by_exact: dict, by_lower: dict, empty: str) -> str:
+        return by_exact.get(name) or by_lower.get(name.lower()) or empty
 
-    participants["test_score"] = participants["username"].map(_lookup_score)
-    preserved = sum(
+    participants["test_score"] = participants["username"].map(
+        lambda u: _lookup(u, existing_scores, existing_scores_ci, EMPTY_TEST_SCORE)
+    )
+    participants["test_responses"] = participants["username"].map(
+        lambda u: _lookup(
+            u, existing_responses, existing_responses_ci, EMPTY_TEST_RESPONSES
+        )
+    )
+    preserved_scores = sum(
         1 for v in participants["test_score"] if v and v != EMPTY_TEST_SCORE
+    )
+    preserved_responses = sum(
+        1 for v in participants["test_responses"] if v and v != EMPTY_TEST_RESPONSES
     )
 
     # Sanity guard: if the existing dataset had real scores but we're about
     # to push without any of them surviving, refuse — something's wrong with
     # the read or the case-matching, and the right move is to investigate,
-    # not to clobber.
-    if non_empty_existing > 0 and preserved == 0:
+    # not to clobber. Responses follow the same guard (they only exist for
+    # users who have at least one score).
+    if non_empty_scores > 0 and preserved_scores == 0:
         sys.exit(
-            f"REFUSING TO PUSH: read {non_empty_existing} non-empty test_score(s) "
+            f"REFUSING TO PUSH: read {non_empty_scores} non-empty test_score(s) "
             f"from existing dataset, but 0 of them matched usernames in the new "
             f"import. Push would wipe real scores. Re-run after investigating "
             f"the username diff (likely a case-sensitivity or normalization issue)."
         )
-    if non_empty_existing > 0 and preserved < non_empty_existing:
+    if non_empty_scores > 0 and preserved_scores < non_empty_scores:
         import time as _time
         print(
-            f"  WARNING: {non_empty_existing - preserved} existing score(s) "
+            f"  WARNING: {non_empty_scores - preserved_scores} existing score(s) "
             f"will be dropped (usernames in existing dataset not present in "
             f"the new import). Press Ctrl-C in the next 5s to abort."
         )
         _time.sleep(5)
 
-    print(f"  pushing with {preserved} preserved test_score(s)")
+    print(
+        f"  pushing with {preserved_scores} preserved test_score(s) "
+        f"and {preserved_responses} preserved test_responses"
+    )
 
     ds = Dataset.from_pandas(
         participants, preserve_index=False, features=PARTICIPANTS_FEATURES

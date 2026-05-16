@@ -28,6 +28,7 @@ from data import (
     country_display,
     has_answers,
     is_fully_validated,
+    parse_test_responses,
     parse_test_score,
     ranking_df,
     user_stats,
@@ -112,6 +113,56 @@ class ParseTestScore(unittest.TestCase):
         result = parse_test_score('{"1": 1}')
         self.assertEqual(result, {"1": 1.0})
         self.assertIsInstance(next(iter(result.values())), float)
+
+
+# ---------------------------------------------------------------------------
+# parse_test_responses
+# ---------------------------------------------------------------------------
+
+
+class ParseTestResponses(unittest.TestCase):
+
+    def test_none_and_empty(self):
+        self.assertEqual(parse_test_responses(None), {})
+        self.assertEqual(parse_test_responses(""), {})
+        self.assertEqual(parse_test_responses("{}"), {})
+
+    def test_single_attempt(self):
+        self.assertEqual(
+            parse_test_responses('{"1": {"CLF_01": "trivial", "MCQ_01": "a"}}'),
+            {"1": {"CLF_01": "trivial", "MCQ_01": "a"}},
+        )
+
+    def test_multiple_attempts(self):
+        self.assertEqual(
+            parse_test_responses(
+                '{"1": {"CLF_01": "trivial"}, "2": {"CLF_01": "knowledge"}}'
+            ),
+            {"1": {"CLF_01": "trivial"}, "2": {"CLF_01": "knowledge"}},
+        )
+
+    def test_invalid_json_returns_empty(self):
+        self.assertEqual(parse_test_responses("not json"), {})
+        self.assertEqual(parse_test_responses("{1: trivial"), {})
+
+    def test_non_dict_returns_empty(self):
+        self.assertEqual(parse_test_responses("[1, 2, 3]"), {})
+        self.assertEqual(parse_test_responses('"hello"'), {})
+
+    def test_skips_non_dict_inner_values(self):
+        # Defensive: if one attempt's value is somehow a string/list instead
+        # of a dict (corrupt cell), skip it rather than crash. The other
+        # attempts in the same cell should still parse.
+        self.assertEqual(
+            parse_test_responses('{"1": {"CLF_01": "a"}, "2": "broken"}'),
+            {"1": {"CLF_01": "a"}},
+        )
+
+    def test_coerces_keys_and_values_to_str(self):
+        # JSON dict keys are always strings; values should be too (so we
+        # never accidentally store an int / None in the per-question map).
+        result = parse_test_responses('{"1": {"CLF_01": 42}}')
+        self.assertEqual(result, {"1": {"CLF_01": "42"}})
 
 
 # ---------------------------------------------------------------------------
