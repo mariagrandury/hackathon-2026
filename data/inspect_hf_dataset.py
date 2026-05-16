@@ -51,7 +51,7 @@ from data import (
     load_prompts_df,
     ranking_df,
 )
-from import_participants_info import _order_by_lang, clean_username
+from import_participants_info import _default_csv, _order_by_lang, clean_username
 
 REPO_DIR = _REPO_ROOT
 OUT_DIR = REPO_DIR / "data"
@@ -428,17 +428,6 @@ def plot_prompts(df: pd.DataFrame, path: Path) -> None:
 
 
 # --- entry point ------------------------------------------------------------
-
-
-def _default_csv() -> Path | None:
-    # Match only the canonical Eventbrite export name (report-<date>T<time>.csv),
-    # not sidecars like report-...-_missing_hf.csv.
-    canonical = re.compile(r"^report-\d{4}-\d{2}-\d{2}T\d{4}\.csv$")
-    found = sorted(
-        p for p in (REPO_DIR / "reports").glob("report-*.csv")
-        if canonical.match(p.name)
-    )
-    return found[-1] if found else None
 
 
 def main() -> None:

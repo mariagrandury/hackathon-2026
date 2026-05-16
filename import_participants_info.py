@@ -11,12 +11,15 @@ name + email of every attendee whose HF username was blank or unrecognized,
 so organisers can follow up and get it fixed.
 
 Usage:
-    # Dry run — print the cleaned table + write the missing-username
-    # report; push nothing to the Hub.
+    # Dry run against the newest reports/report-*.csv — print the cleaned
+    # table + write the missing-username report; push nothing to the Hub.
+    python import_participants_info.py
+
+    # Pin to a specific export instead of the newest.
     python import_participants_info.py reports/report-XXXX.csv
 
-    # Same, plus overwrite the Hub dataset.
-    python import_participants_info.py reports/report-XXXX.csv --push
+    # Push to the Hub (uses the newest report by default).
+    python import_participants_info.py --push
 
 Destructive: ``--push`` overwrites ``mariagrandury/hackathon_participants``.
 """
@@ -39,6 +42,25 @@ from data import (
     _cache_invalidate,
     load_participants_df,
 )
+
+# Repo root (this file lives at the top level). ``data/inspect_hf_dataset.py``
+# imports ``_default_csv`` from here, so the lookup is consistent across
+# scripts and tests.
+REPO_DIR = Path(__file__).resolve().parent
+REPORTS_DIR = REPO_DIR / "reports"
+
+
+def _default_csv() -> Path | None:
+    """Newest canonical Eventbrite export under ``reports/``.
+
+    Matches only ``report-<YYYY-MM-DD>T<HHMM>.csv`` — skips sidecars like
+    ``report-...-_missing_hf.csv`` and anything else that happens to start
+    with ``report-``. Returns None if no canonical export exists yet."""
+    canonical = re.compile(r"^report-\d{4}-\d{2}-\d{2}T\d{4}\.csv$")
+    found = sorted(
+        p for p in REPORTS_DIR.glob("report-*.csv") if canonical.match(p.name)
+    )
+    return found[-1] if found else None
 
 TICKET_TO_LANG = {
     "Hackathon (Español)": "es",
@@ -278,7 +300,15 @@ def build_participants(csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", help="Path to the Eventbrite report CSV")
+    parser.add_argument(
+        "csv",
+        nargs="?",
+        default=None,
+        help=(
+            "Path to the Eventbrite report CSV. Optional: defaults to the "
+            "newest reports/report-*.csv export."
+        ),
+    )
     parser.add_argument(
         "--push",
         action="store_true",
@@ -286,7 +316,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    participants, missing = build_participants(args.csv)
+    csv_path = args.csv or _default_csv()
+    if csv_path is None:
+        sys.exit(
+            f"No CSV given and no canonical export found under {REPORTS_DIR}. "
+            f"Drop an Eventbrite report (report-<YYYY-MM-DD>T<HHMM>.csv) "
+            f"there or pass a path explicitly."
+        )
+    if not args.csv:
+        print(f"Using newest report: {csv_path}")
+
+    participants, missing = build_participants(str(csv_path))
 
     print(f"Cleaned participants: {len(participants)}")
     print()
@@ -295,7 +335,7 @@ def main() -> None:
     print("By language:", participants["language"].value_counts().to_dict())
     print("By country: ", participants["country"].value_counts(dropna=False).to_dict())
 
-    missing_path = Path(args.csv).with_name(f"{Path(args.csv).stem}_missing_hf.csv")
+    missing_path = csv_path.with_name(f"{csv_path.stem}_missing_hf.csv")
     missing.to_csv(missing_path, index=False)
     print(
         f"\nWrote {len(missing)} attendee(s) with a missing/unrecognized HF "
