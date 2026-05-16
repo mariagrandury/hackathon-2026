@@ -34,9 +34,14 @@ EMPTY_VOTE = {"choice": "", "username": ""}
 # enough that JSON encoding is fine.
 EMPTY_TEST_SCORE = "{}"
 
-# Minimum fraction of correct answers needed to unlock the action tabs
-# (Writing / Validation / Voting).
-TEST_PASS_THRESHOLD = 0.80
+# Pass mark for the entry test, expressed as a fraction of the max possible
+# raw score. The current grading scheme (see ``test_data.grade``) tops out
+# at 14 classification points + 2 MCQ points = 16; ``12 / 16 = 0.75``
+# corresponds to "need at least 12 raw points to unlock the action tabs".
+# Stored test scores are also fractions in [score_min, 1.0] (the partial-
+# credit scheme can go negative), so this is directly comparable with
+# ``best_test_score``.
+TEST_PASS_THRESHOLD = 12 / 16
 
 # Canonical validation bucket ordering, shared across the app and the entry
 # test. Lives here (not in app.py) so non-Gradio modules like ``test_data``

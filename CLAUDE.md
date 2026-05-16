@@ -160,6 +160,21 @@ python app.py
 # → http://localhost:7860
 ```
 
+## Tests
+
+`tests/test_grading.py` covers the entry-test grading: per-question scoring
+rules (classification partial-credit + MCQ ±1), `grade()` composition, and
+the bank-loader invariants. Plain stdlib `unittest`, no extra deps.
+
+```bash
+python -m unittest discover tests
+```
+
+Synthetic banks (patched in via `unittest.mock.patch.multiple`) keep the
+scoring tests independent of `data/test-2026.json`'s current contents; the
+`BankLoaders` section deliberately hits the real JSON to lock the
+`TEST_QUESTIONS_PER_CATEGORY` quota and entry/hidden disjointness.
+
 Locally, Gradio's `LoginButton` mocks the OAuth flow with whatever HF account
 your CLI / `HF_TOKEN` is logged in as, so `Save prompt` only succeeds if your
 username is in the participants seed (the default seed includes
@@ -183,8 +198,8 @@ are intentionally different.
    `data/` stays out) into a sibling clone of the Space repo (default
    `../2026-space-cultural-preferences`). Commit + push from that clone.
    `CLAUDE.md`, `seed_datasets.py`, `import_dpo_pairs.py`,
-   `import_participants_info.py`, `test_integration.py`, the rest of
-   `data/`, `reports/`, `.env*` deliberately stay out of the Space.
+   `import_participants_info.py`, `tests/`, the rest of `data/`,
+   `reports/`, `.env*` deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.
@@ -285,9 +300,10 @@ In rough priority order:
    prompts to validate, leaderboard before login), the message is plain
    markdown — could be a friendlier empty state with a CTA pointing to the
    next thing to do.
-7. **Self-test mode.** Vendor the in-session smoke-run pattern (mock dataset
-   - stubbed OAuth) into a `tests/` folder so contributors can run the UI
-     end-to-end without an HF token.
+7. **End-to-end UI test mode.** Grading is unit-tested in
+   `tests/test_grading.py`; what's still missing is a UI walkthrough that
+   mocks the HF dataset and stubs OAuth so contributors can drive `app.py`
+   end-to-end without an HF token.
 8. **Audit log.** Optional column tracking _who changed what when_ for each
    slot, so disputed validations/votes can be traced.
 

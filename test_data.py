@@ -34,7 +34,7 @@ import os
 from collections import defaultdict
 from typing import Iterable
 
-from data import VALIDATION_CHOICES
+from data import REJECT_CHOICES, VALIDATION_CHOICES
 
 TEST_FILE = "test-2026.json"
 DATA_DIR = "data"
@@ -125,23 +125,78 @@ def load_hidden_questions(lang: str) -> list[dict]:
     return out
 
 
-def grade(answers: Iterable[tuple[str, str | None]], lang: str) -> tuple[float, int, int]:
-    """Score the user's answers against the entry-test bank.
+def load_mcq_questions(lang: str) -> list[dict]:
+    """Multiple-choice comparison questions from ``multiple_choice[]``.
+    Each has ``options`` (4 strings) and ``correct`` (the full text of the
+    right one — matches one of ``options``). All of them appear in the
+    entry test; there's no per-category quota because they're discriminator
+    questions that span categories."""
+    path = _path()
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    return [dict(q) for q in payload.get("multiple_choice", [])]
 
-    ``answers`` is an iterable of ``(question_id, chosen_value)`` pairs,
-    where ``chosen_value`` is a canonical bucket key. Returns
-    ``(score_fraction, n_correct, n_total)``; unanswered questions count
-    against the score. The denominator is the entry-test size (not the
-    full bank) — hidden questions don't affect the score."""
-    questions = {q["id"]: q for q in load_questions(lang)}
-    total = len(questions)
-    if total == 0:
-        return 0.0, 0, 0
-    correct = 0
+
+# ---------------------------------------------------------------------------
+# Grading
+# ---------------------------------------------------------------------------
+#
+# Classification questions use a partial-credit scheme (rewards "you got the
+# Reject/Accept side right" even when the exact bucket is wrong). MCQs are
+# treated as theoretical comprehension questions: binary +1 / -1 with no
+# partial credit, since the 4 options aren't side-orderable.
+
+_CLASSIFICATION_EXACT = 1.0
+_CLASSIFICATION_SAME_SIDE = 0.5
+_CLASSIFICATION_WRONG_SIDE = -0.5
+_MCQ_CORRECT = 1.0
+_MCQ_WRONG = -1.0
+
+
+def _score_classification(q: dict, value: str | None) -> float:
+    if value is None:
+        return 0.0
+    correct = q["correct_key"]
+    if value == correct:
+        return _CLASSIFICATION_EXACT
+    same_side = (value in REJECT_CHOICES) == (correct in REJECT_CHOICES)
+    return _CLASSIFICATION_SAME_SIDE if same_side else _CLASSIFICATION_WRONG_SIDE
+
+
+def _score_mcq(q: dict, value: str | None) -> float:
+    if value is None:
+        return 0.0
+    return _MCQ_CORRECT if value == q.get("correct") else _MCQ_WRONG
+
+
+def grade(
+    answers: Iterable[tuple[str, str | None]], lang: str
+) -> tuple[float, float, float]:
+    """Score the user's answers against the entry test (classification + MCQ).
+
+    ``answers`` is an iterable of ``(question_id, chosen_value)`` pairs.
+    For classification questions ``chosen_value`` is a canonical bucket
+    key; for MCQs it's the full option string. Unknown ids are skipped.
+
+    Returns ``(score_fraction, raw_score, max_possible)`` where
+    ``raw_score`` is the signed sum of per-question scores and
+    ``max_possible`` = (# classification + # MCQ). ``score_fraction =
+    raw_score / max_possible`` and can be negative (the test penalizes
+    wrong-side / wrong-MCQ answers); ``best_test_score`` and the
+    pass-mark comparison handle that without special-casing."""
+    classification = {q["id"]: q for q in load_questions(lang)}
+    mcq = {q["id"]: q for q in load_mcq_questions(lang)}
+    max_possible = float(len(classification) + len(mcq))
+    if max_possible == 0:
+        return 0.0, 0.0, 0.0
+    raw = 0.0
     for qid, value in answers:
-        q = questions.get(qid)
-        if q is None:
-            continue
-        if value is not None and value == q["correct_key"]:
-            correct += 1
-    return correct / total, correct, total
+        if qid in classification:
+            raw += _score_classification(classification[qid], value)
+        elif qid in mcq:
+            raw += _score_mcq(mcq[qid], value)
+        # Unknown id: silently skip — could happen if the JSON was edited
+        # between the user loading the test and submitting.
+    return raw / max_possible, raw, max_possible

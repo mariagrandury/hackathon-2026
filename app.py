@@ -25,6 +25,7 @@ a regular input and look up the right string in ``T``.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import random
 
@@ -54,7 +55,10 @@ from data import (
     user_stats,
 )
 from test_data import grade as grade_test
-from test_data import load_questions as load_test_questions
+from test_data import (
+    load_mcq_questions as load_test_mcq_questions,
+    load_questions as load_test_questions,
+)
 
 VOTE_CHOICES = ("a", "b", "both", "none")
 # Validation buckets (REJECT_CHOICES + ACCEPT_CHOICES) are defined in data.py
@@ -81,10 +85,12 @@ APP_CSS = (
     " .test-choices .wrap label { font-size: 0.875rem; }"
 )
 
-# Fixed-size pool of radio components for the test tab. The tab populates
-# the first N at runtime from the current language's question bank and
-# hides the rest. Keep this >= the longest per-language test.
+# Fixed-size pools of UI blocks for the entry test. The tab pre-creates a
+# pool per question type (classification / MCQ); ``load_test`` shows the
+# first N of each and hides the rest. Keep these >= the largest bank we
+# expect; the JSON today has 14 classification + 2 MCQ in the entry test.
 MAX_TEST_QUESTIONS = 20
+MAX_TEST_MCQ = 4
 
 # Register ``images/`` as a static directory so the guidelines Markdown can
 # embed local infographics via ``/file=images/...`` URLs. Without this,
@@ -112,18 +118,17 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Leaderboard",
         "guidelines_missing": "Guidelines for this language are not available yet.",
         # Test
-        "test_intro": "Answer all questions, then click **Submit test**. You need **{threshold}%** correct to unlock the rest of the app. Unlimited retries — if you fail, reread the guidelines and try again.",
+        "test_intro": "Answer all questions, then click **Submit test**. You need **{needed} / {max}** points to unlock the rest of the app. Classification questions award **+1** for the exact category, **+0.5** if you got the Reject/Accept side right but the bucket wrong, and **−0.5** if you got the side wrong. Multiple-choice questions award **+1** correct / **−1** wrong. Unanswered questions count as 0. Unlimited retries — if you fail, reread the guidelines and try again.",
         "test_login_required": "Please log in with Hugging Face to take the test.",
         "test_not_participant": "User `{username}` is not registered as a hackathon participant. Ask the organisers to add you before taking the test.",
         "test_no_questions": "No test is available for this language yet.",
         "test_question_label": "Question {n}: {prompt}",
         "test_submit_button": "Submit test",
         "test_retake_button": "Take the test again",
-        "test_status_taken": "You scored **{percent}%** on attempt {attempt}. Pass mark is **{threshold}%**.",
-        "test_status_passed": "🎉 You scored **{percent}%** on attempt {attempt}. The Prompt Writing, Validation and Voting tabs are now unlocked.",
-        "test_status_failed": "You scored **{percent}%** on attempt {attempt}. You need **{threshold}%** to unlock the rest of the app. Reread the guidelines and take the test again.",
+        "test_status_passed": "🎉 You scored **{raw} / {max}** on attempt {attempt}. The Prompt Writing, Validation and Voting tabs are now unlocked.",
+        "test_status_failed": "You scored **{raw} / {max}** on attempt {attempt}. You need **{needed} / {max}** to unlock the rest of the app. Reread the guidelines and take the test again.",
         "test_status_unanswered": "Please answer every question before submitting.",
-        "test_status_best": "Your best score so far: **{percent}%**.",
+        "test_status_best": "Your best score so far: **{raw} / {max}**.",
         "test_already_passed": "🎉 You already passed the entry test, great work! Head to **Prompt Writing**, **Prompt Validation** and **Answer Voting** to contribute your prompts and validations to the dataset.",
         # Common
         "login_required": "Please log in with Hugging Face first.",
@@ -210,18 +215,17 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Ranking",
         "guidelines_missing": "La guía en este idioma todavía no están disponibles.",
         # Test
-        "test_intro": "Responde a todas las preguntas y haz clic en **Enviar test**. Necesitas un **{threshold}%** de aciertos para desbloquear el resto de la aplicación. Puedes reintentarlo cuantas veces quieras — si suspendes, relee la guía y vuelve a intentarlo.",
+        "test_intro": "Responde a todas las preguntas y haz clic en **Enviar test**. Necesitas **{needed} / {max}** puntos para desbloquear el resto de la aplicación. Las preguntas de clasificación dan **+1** si aciertas la categoría exacta, **+0.5** si aciertas el lado (Rechazar/Aceptar) pero no la categoría, y **−0.5** si te equivocas de lado. Las preguntas de opción múltiple dan **+1** si aciertas / **−1** si fallas. Las no respondidas valen 0. Puedes reintentarlo cuantas veces quieras — si suspendes, relee la guía y vuelve a intentarlo.",
         "test_login_required": "Por favor, inicia sesión con Hugging Face para hacer el test.",
         "test_not_participant": "El usuario `{username}` no está registrado como participante del hackathon. Pide a los organizadores que te añadan antes de hacer el test.",
         "test_no_questions": "Todavía no hay un test disponible en este idioma.",
         "test_question_label": "Pregunta {n}: {prompt}",
         "test_submit_button": "Enviar test",
         "test_retake_button": "Volver a hacer el test",
-        "test_status_taken": "Has obtenido un **{percent}%** en el intento {attempt}. Nota de corte: **{threshold}%**.",
-        "test_status_passed": "🎉 Has obtenido un **{percent}%** en el intento {attempt}, ¡buen trabajo! Las pestañas de Escribir, Validar y Votar ya están desbloqueadas para que contribuyas al dataset.",
-        "test_status_failed": "Has obtenido un **{percent}%** en el intento {attempt}. Necesitas un **{threshold}%** para desbloquear el resto de la aplicación. Relee la guía y vuelve a intentarlo.",
+        "test_status_passed": "🎉 Has obtenido **{raw} / {max}** en el intento {attempt}, ¡buen trabajo! Las pestañas de Escribir, Validar y Votar ya están desbloqueadas para que contribuyas al dataset.",
+        "test_status_failed": "Has obtenido **{raw} / {max}** en el intento {attempt}. Necesitas **{needed} / {max}** para desbloquear el resto de la aplicación. Relee la guía y vuelve a intentarlo.",
         "test_status_unanswered": "Por favor, responde a todas las preguntas antes de enviar el test.",
-        "test_status_best": "Tu mejor puntuación hasta ahora: **{percent}%**.",
+        "test_status_best": "Tu mejor puntuación hasta ahora: **{raw} / {max}**.",
         "test_already_passed": "🎉 ¡Ya has aprobado el test de acceso, enhorabuena! Pasa a las pestañas **Escribir prompts**, **Validar prompts** y **Votar respuestas** para contribuir al dataset.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
@@ -304,18 +308,17 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Classificação",
         "guidelines_missing": "As diretrizes neste idioma ainda não estão disponíveis.",
         # Test
-        "test_intro": "Responda todas as perguntas e clique em **Enviar teste**. Você precisa de **{threshold}%** de acertos para desbloquear o resto da aplicação. Tentativas ilimitadas — se reprovar, releia as diretrizes e tente novamente.",
+        "test_intro": "Responda todas as perguntas e clique em **Enviar teste**. Você precisa de **{needed} / {max}** pontos para desbloquear o resto da aplicação. As perguntas de classificação dão **+1** se você acertar a categoria exata, **+0.5** se acertar o lado (Rejeitar/Aceitar) mas não a categoria, e **−0.5** se errar o lado. As de múltipla escolha dão **+1** correto / **−1** errado. As não respondidas valem 0. Tentativas ilimitadas — se reprovar, releia as diretrizes e tente novamente.",
         "test_login_required": "Por favor, entre com o Hugging Face para fazer o teste.",
         "test_not_participant": "O usuário `{username}` não está registrado como participante do hackathon. Peça aos organizadores para adicioná-lo antes de fazer o teste.",
         "test_no_questions": "Ainda não há um teste disponível neste idioma.",
         "test_question_label": "Pergunta {n}: {prompt}",
         "test_submit_button": "Enviar teste",
         "test_retake_button": "Refazer o teste",
-        "test_status_taken": "Você obteve **{percent}%** na tentativa {attempt}. Nota de corte: **{threshold}%**.",
-        "test_status_passed": "🎉 Você obteve **{percent}%** na tentativa {attempt}. As abas Escrever, Validar e Votar foram desbloqueadas.",
-        "test_status_failed": "Você obteve **{percent}%** na tentativa {attempt}. Precisa de **{threshold}%** para desbloquear o resto da aplicação. Releia as diretrizes e tente novamente.",
+        "test_status_passed": "🎉 Você obteve **{raw} / {max}** na tentativa {attempt}. As abas Escrever, Validar e Votar foram desbloqueadas.",
+        "test_status_failed": "Você obteve **{raw} / {max}** na tentativa {attempt}. Precisa de **{needed} / {max}** para desbloquear o resto da aplicação. Releia as diretrizes e tente novamente.",
         "test_status_unanswered": "Por favor, responda todas as perguntas antes de enviar o teste.",
-        "test_status_best": "Sua melhor pontuação até agora: **{percent}%**.",
+        "test_status_best": "Sua melhor pontuação até agora: **{raw} / {max}**.",
         "test_already_passed": "🎉 Você já passou no teste de acesso, parabéns! Vá para as abas **Escrever prompts**, **Validar prompts** e **Votar respostas** para contribuir com o dataset.",
         # Common
         "login_required": "Por favor, entre com o Hugging Face primeiro.",
@@ -736,8 +739,24 @@ def _vote_handler(choice: str):
 # ---------------------------------------------------------------------------
 
 
-def _test_threshold_pct() -> int:
-    return int(round(TEST_PASS_THRESHOLD * 100))
+def _test_max_possible(lang: str) -> int:
+    """Raw-score ceiling for the entry test: one point per classification
+    question + one point per MCQ. Today: 14 + 2 = 16."""
+    return len(load_test_questions(lang)) + len(load_test_mcq_questions(lang))
+
+
+def _pass_raw(max_possible: float) -> float:
+    """Smallest 0.5-step raw score that meets ``TEST_PASS_THRESHOLD``.
+    Returns a fractional float when the threshold lands on a half-point
+    (e.g. threshold=0.7, max=16 → 11.5); for the current 12/16 it's 12.0."""
+    return math.ceil(TEST_PASS_THRESHOLD * max_possible * 2) / 2
+
+
+def _fmt_score(s: float) -> str:
+    """Display a raw score as ``"12"`` when it's a whole number,
+    ``"11.5"`` otherwise. Avoids the ``12.0`` look while keeping half-point
+    partial-credit scores legible."""
+    return str(int(s)) if s == int(s) else f"{s:.1f}"
 
 
 def _shuffle_questions(lang: str) -> list[dict]:
@@ -762,8 +781,9 @@ def _test_question_updates(
     lang: str,
     reset_values: bool,
 ) -> tuple[list, list, list, list]:
-    """Build four ``MAX_TEST_QUESTIONS``-long lists of updates, one per
-    output type, in the order the test tab and ``load_test`` flatten them:
+    """Build four ``MAX_TEST_QUESTIONS``-long lists of updates for the
+    classification block pool, one per output type, in the order the test
+    tab and ``load_test`` flatten them:
         - wrapping ``Column`` visibility
         - question Markdown
         - Reject radio
@@ -804,6 +824,59 @@ def _test_question_updates(
     return blocks, mds, rejects, accepts
 
 
+def _test_mcq_updates(
+    mcqs: list[dict],
+    lang: str,
+    reset_values: bool,
+    *,
+    n_classif: int,
+) -> tuple[list, list, list]:
+    """Build three ``MAX_TEST_MCQ``-long lists of updates for the MCQ block
+    pool, in order: wrapping ``Column`` visibility, prompt Markdown, single
+    4-option radio. Slots beyond ``len(mcqs)`` are hidden / no-op'd.
+
+    ``n_classif`` is the count of classification questions already shown,
+    so MCQ numbering continues from there (e.g. "Pregunta 15: …")."""
+    s = _t(lang)
+    blocks, mds, radios = [], [], []
+    for i in range(MAX_TEST_MCQ):
+        if i < len(mcqs):
+            q = mcqs[i]
+            blocks.append(gr.update(visible=True))
+            mds.append(
+                gr.update(
+                    value=s["test_question_label"].format(
+                        n=n_classif + i + 1, prompt=q["prompt"]
+                    )
+                )
+            )
+            # Use the option string as both the displayed label and the
+            # emitted value; grading compares string-equal to ``correct``.
+            choices = [(opt, opt) for opt in q.get("options", [])]
+            update = dict(choices=choices)
+            if reset_values:
+                update["value"] = None
+            radios.append(gr.update(**update))
+        else:
+            blocks.append(gr.update(visible=False))
+            mds.append(gr.update())
+            radios.append(gr.update())
+    return blocks, mds, radios
+
+
+def _load_test_mcqs(lang: str) -> list[dict]:
+    """MCQ questions for the entry test. Not shuffled (there are only two,
+    and order is preserved so MCQ_01 always comes first). Asserts the bank
+    fits the UI pool so an oversize bank fails at load time, not at grade
+    time."""
+    mcqs = list(load_test_mcq_questions(lang))
+    assert len(mcqs) <= MAX_TEST_MCQ, (
+        f"MCQ bank has {len(mcqs)} items, but MAX_TEST_MCQ={MAX_TEST_MCQ}. "
+        f"Increase the constant in app.py so every MCQ gets a rendered radio."
+    )
+    return mcqs
+
+
 def load_test(
     lang: str,
     profile: gr.OAuthProfile | None,
@@ -817,24 +890,31 @@ def load_test(
     and falls back to a fresh load.
 
     Outputs (in order):
-        - ``questions_state``
+        - ``questions_state`` (shuffled classification questions)
+        - ``mcq_state`` (MCQs in file order)
         - ``intro_md``
         - ``status_md``
         - ``submit_btn``
         - ``retake_btn``
-        - four ``MAX_TEST_QUESTIONS``-long blocks of updates flattened in this order:
-            - wrapping ``Column`` visibility
-            - question Markdown
-            - Reject radio
-            - Accept radio
+        - four ``MAX_TEST_QUESTIONS``-long classification blocks flattened
+          as: ``Column`` visibility, question Markdown, Reject radio,
+          Accept radio
+        - three ``MAX_TEST_MCQ``-long MCQ blocks flattened as: ``Column``
+          visibility, prompt Markdown, 4-option radio
 
     The flattened order here must match the outputs= list in ``build_demo``
     for ``demo.load`` and ``retake_btn.click``.
     """
     s = _t(lang)
-    intro = s["test_intro"].format(threshold=_test_threshold_pct())
-    empty = [gr.update() for _ in range(MAX_TEST_QUESTIONS)]
-    hidden_blocks = [gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)]
+    max_possible = _test_max_possible(lang)
+    needed = _pass_raw(max_possible)
+    intro = s["test_intro"].format(
+        needed=_fmt_score(needed), max=_fmt_score(max_possible)
+    )
+    classif_empty = [gr.update() for _ in range(MAX_TEST_QUESTIONS)]
+    classif_hidden = [gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)]
+    mcq_empty = [gr.update() for _ in range(MAX_TEST_MCQ)]
+    mcq_hidden = [gr.update(visible=False) for _ in range(MAX_TEST_MCQ)]
 
     # Users who have already passed don't need to see the test again — show a
     # celebratory message that points them at the gated tabs and hide the
@@ -845,74 +925,87 @@ def load_test(
         if best >= TEST_PASS_THRESHOLD:
             return (
                 [],
+                [],
                 gr.update(value="", visible=False),
                 gr.update(value=s["test_already_passed"], visible=True),
                 gr.update(visible=False),
                 gr.update(visible=False),
-                *hidden_blocks,
-                *empty,
-                *empty,
-                *empty,
+                *classif_hidden, *classif_empty, *classif_empty, *classif_empty,
+                *mcq_hidden, *mcq_empty, *mcq_empty,
             )
 
     questions = _shuffle_questions(lang)
-    if not questions:
+    mcqs = _load_test_mcqs(lang)
+    if not questions and not mcqs:
         status = s["test_no_questions"]
-        # Hide everything: blocks invisible, mds/radios left as no-ops.
         return (
+            [],
             [],
             gr.update(value=intro, visible=True),
             gr.update(value=status),
             gr.update(visible=False),
             gr.update(visible=False),
-            *hidden_blocks,
-            *empty,
-            *empty,
-            *empty,
+            *classif_hidden, *classif_empty, *classif_empty, *classif_empty,
+            *mcq_hidden, *mcq_empty, *mcq_empty,
         )
     status_lines = []
     if profile is not None:
         best = best_test_score(profile.username, participants_df)
         if best > 0:
+            # Best score is stored as a fraction in [score_min, 1]; convert
+            # back to raw points (best * max) so it's comparable to the
+            # in-progress test score format.
             status_lines.append(
-                s["test_status_best"].format(percent=int(round(best * 100)))
+                s["test_status_best"].format(
+                    raw=_fmt_score(best * max_possible),
+                    max=_fmt_score(max_possible),
+                )
             )
     status = "\n\n".join(status_lines)
-    blocks, mds, rejects, accepts = _test_question_updates(
+    c_blocks, c_mds, c_rejects, c_accepts = _test_question_updates(
         questions, lang, reset_values=True
+    )
+    m_blocks, m_mds, m_radios = _test_mcq_updates(
+        mcqs, lang, reset_values=True, n_classif=len(questions)
     )
     return (
         questions,
+        mcqs,
         gr.update(value=intro, visible=True),
         gr.update(value=status),
         gr.update(visible=True),
         gr.update(visible=False),
-        *blocks,
-        *mds,
-        *rejects,
-        *accepts,
+        *c_blocks, *c_mds, *c_rejects, *c_accepts,
+        *m_blocks, *m_mds, *m_radios,
     )
 
 
 def submit_test(
     questions: list[dict],
+    mcqs: list[dict],
     lang: str,
     profile: gr.OAuthProfile | None,
     *answers,
 ):
     """Grade the submitted answers, persist the score, and return UI updates.
 
-    ``answers`` is the concatenation of two ``MAX_TEST_QUESTIONS``-long
-    sequences: all reject-radio values, then all accept-radio values.
-    Mutual exclusion (``_clear_other_radio``) guarantees at most one of
-    each pair holds a value; we coalesce them into one chosen bucket per
-    question. Unanswered = both radios at ``None``.
+    ``answers`` is the concatenation of three pools in the order they're
+    wired in ``build_demo``:
+        - ``MAX_TEST_QUESTIONS`` Reject-radio values
+        - ``MAX_TEST_QUESTIONS`` Accept-radio values
+        - ``MAX_TEST_MCQ`` MCQ-radio values
+    Reject/Accept mutual exclusion (``_clear_other_radio``) guarantees at
+    most one of each pair holds a value; we coalesce them into a single
+    chosen bucket per classification question. Unanswered = ``None`` in
+    every relevant slot; per-question score is then 0 (no credit, no
+    penalty), see ``test_data.grade``.
 
     Outputs (in order): ``status_md``, ``submit_btn``, ``retake_btn``,
     ``tab_writing``, ``tab_validation``, ``tab_voting``.
     """
     s = _t(lang)
-    threshold_pct = _test_threshold_pct()
+    max_possible = _test_max_possible(lang)
+    needed = _pass_raw(max_possible)
     noop = (gr.update(), gr.update(), gr.update())  # tabs unchanged
     if profile is None:
         return (
@@ -921,22 +1014,25 @@ def submit_test(
             gr.update(visible=False),
             *noop,
         )
-    if not questions:
+    if not questions and not mcqs:
         return (
             gr.update(value=s["test_no_questions"]),
             gr.update(visible=False),
             gr.update(visible=False),
             *noop,
         )
-    # Split the flattened answer tuple back into the two radio pools, then
-    # collapse each (reject, accept) pair to whichever holds a value.
-    reject_answers = answers[:MAX_TEST_QUESTIONS]
-    accept_answers = answers[MAX_TEST_QUESTIONS : 2 * MAX_TEST_QUESTIONS]
-    paired = []
+    # Slice the flat answer tuple back into the three pools, then pair the
+    # values with their question ids in test order.
+    reject_pool = answers[:MAX_TEST_QUESTIONS]
+    accept_pool = answers[MAX_TEST_QUESTIONS : 2 * MAX_TEST_QUESTIONS]
+    mcq_pool = answers[2 * MAX_TEST_QUESTIONS : 2 * MAX_TEST_QUESTIONS + MAX_TEST_MCQ]
+    paired: list[tuple[str, str | None]] = []
     for i, q in enumerate(questions):
-        r = reject_answers[i]
-        a = accept_answers[i]
+        r = reject_pool[i]
+        a = accept_pool[i]
         paired.append((q["id"], a if a is not None else r))
+    for i, q in enumerate(mcqs):
+        paired.append((q["id"], mcq_pool[i]))
     if any(value is None for _, value in paired):
         return (
             gr.update(value=s["test_status_unanswered"]),
@@ -944,7 +1040,7 @@ def submit_test(
             gr.update(visible=False),
             *noop,
         )
-    score, _correct, _total = grade_test(paired, lang)
+    score, raw, _max = grade_test(paired, lang)
     try:
         attempt = record_test_attempt(profile.username, score)
     except LookupError:
@@ -956,13 +1052,17 @@ def submit_test(
             gr.update(visible=False),
             *noop,
         )
-    percent = int(round(score * 100))
+    raw_str = _fmt_score(raw)
+    max_str = _fmt_score(max_possible)
+    needed_str = _fmt_score(needed)
     passed = score >= TEST_PASS_THRESHOLD
     if passed:
-        status = s["test_status_passed"].format(percent=percent, attempt=attempt)
+        status = s["test_status_passed"].format(
+            raw=raw_str, max=max_str, attempt=attempt
+        )
     else:
         status = s["test_status_failed"].format(
-            percent=percent, attempt=attempt, threshold=threshold_pct
+            raw=raw_str, max=max_str, needed=needed_str, attempt=attempt
         )
     # Reveal the gated tabs in response — the user doesn't need to reload
     # the page to gain access after passing. We don't *hide* them on failure,
@@ -981,13 +1081,24 @@ def submit_test(
 
 def _build_test_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
-    intro_md = gr.Markdown(s["test_intro"].format(threshold=_test_threshold_pct()))
+    # Initial intro shows the default-language pass mark; ``init_ui`` /
+    # ``load_test`` re-render it with the actual language at page load.
+    initial_max = _test_max_possible(DEFAULT_LANG)
+    initial_needed = _pass_raw(initial_max)
+    intro_md = gr.Markdown(
+        s["test_intro"].format(
+            needed=_fmt_score(initial_needed),
+            max=_fmt_score(initial_max),
+        )
+    )
     questions_state = gr.State([])
-    # Each "question block" is a wrapping ``gr.Column`` that holds the
-    # question Markdown plus a Reject | Accept row of two radios, mirroring
-    # the validation tab. Visibility is toggled on the wrapping Column so a
-    # single ``visible=`` update hides/shows the whole question at once;
-    # ``load_test`` then fills in the Markdown and resets the radios.
+    mcq_state = gr.State([])
+    # Each classification "question block" is a wrapping ``gr.Column`` that
+    # holds the question Markdown plus a Reject | Accept row of two radios,
+    # mirroring the validation tab. Visibility is toggled on the wrapping
+    # Column so a single ``visible=`` update hides/shows the whole question
+    # at once; ``load_test`` then fills in the Markdown and resets the
+    # radios.
     blocks: list[gr.Column] = []
     question_mds: list[gr.Markdown] = []
     reject_radios: list[gr.Radio] = []
@@ -1014,16 +1125,40 @@ def _build_test_tab(language: gr.State) -> dict:
         question_mds.append(qmd)
         reject_radios.append(reject)
         accept_radios.append(accept)
+    # MCQ blocks come *after* the classification ones — different format
+    # (single 4-option radio whose options are language-agnostic strings
+    # straight out of the JSON), grouped at the end so the user feels a
+    # clear phase change. ``load_test`` populates ``choices`` at runtime
+    # from each MCQ's ``options`` list.
+    mcq_blocks: list[gr.Column] = []
+    mcq_mds: list[gr.Markdown] = []
+    mcq_radios: list[gr.Radio] = []
+    for _ in range(MAX_TEST_MCQ):
+        with gr.Column(visible=False) as mblock:
+            mmd = gr.Markdown(elem_classes=["test-question"])
+            mradio = gr.Radio(
+                choices=[],
+                value=None,
+                elem_classes=["validation-choices", "test-choices"],
+                show_label=False,
+            )
+        mcq_blocks.append(mblock)
+        mcq_mds.append(mmd)
+        mcq_radios.append(mradio)
     submit_btn = gr.Button(s["test_submit_button"], variant="primary", visible=False)
     status_md = gr.Markdown()
     retake_btn = gr.Button(s["test_retake_button"], visible=False)
     return {
         "intro_md": intro_md,
         "questions_state": questions_state,
+        "mcq_state": mcq_state,
         "blocks": blocks,
         "question_mds": question_mds,
         "reject_radios": reject_radios,
         "accept_radios": accept_radios,
+        "mcq_blocks": mcq_blocks,
+        "mcq_mds": mcq_mds,
+        "mcq_radios": mcq_radios,
         "submit_btn": submit_btn,
         "status_md": status_md,
         "retake_btn": retake_btn,
@@ -1529,9 +1664,11 @@ def build_demo() -> gr.Blocks:
             submit_test,
             inputs=[
                 test_tab["questions_state"],
+                test_tab["mcq_state"],
                 language,
                 *test_tab["reject_radios"],
                 *test_tab["accept_radios"],
+                *test_tab["mcq_radios"],
             ],
             outputs=[
                 test_tab["status_md"],
@@ -1547,6 +1684,7 @@ def build_demo() -> gr.Blocks:
             inputs=[language],
             outputs=[
                 test_tab["questions_state"],
+                test_tab["mcq_state"],
                 test_tab["intro_md"],
                 test_tab["status_md"],
                 test_tab["submit_btn"],
@@ -1555,6 +1693,9 @@ def build_demo() -> gr.Blocks:
                 *test_tab["question_mds"],
                 *test_tab["reject_radios"],
                 *test_tab["accept_radios"],
+                *test_tab["mcq_blocks"],
+                *test_tab["mcq_mds"],
+                *test_tab["mcq_radios"],
             ],
         )
 
@@ -1574,6 +1715,7 @@ def build_demo() -> gr.Blocks:
                 tab_leaderboard,
                 guidelines_md,
                 test_tab["questions_state"],
+                test_tab["mcq_state"],
                 test_tab["intro_md"],
                 test_tab["status_md"],
                 test_tab["submit_btn"],
@@ -1582,6 +1724,9 @@ def build_demo() -> gr.Blocks:
                 *test_tab["question_mds"],
                 *test_tab["reject_radios"],
                 *test_tab["accept_radios"],
+                *test_tab["mcq_blocks"],
+                *test_tab["mcq_mds"],
+                *test_tab["mcq_radios"],
                 writing["system_box"],
                 writing["prompt_box"],
                 writing["save_btn"],
