@@ -84,7 +84,7 @@ APP_CSS = (
 # Fixed-size pool of radio components for the test tab. The tab populates
 # the first N at runtime from the current language's question bank and
 # hides the rest. Keep this >= the longest per-language test.
-MAX_TEST_QUESTIONS = 30
+MAX_TEST_QUESTIONS = 20
 
 # Register ``images/`` as a static directory so the guidelines Markdown can
 # embed local infographics via ``/file=images/...`` URLs. Without this,
@@ -124,6 +124,7 @@ T: dict[str, dict[str, str]] = {
         "test_status_failed": "You scored **{percent}%** on attempt {attempt}. You need **{threshold}%** to unlock the rest of the app. Reread the guidelines and take the test again.",
         "test_status_unanswered": "Please answer every question before submitting.",
         "test_status_best": "Your best score so far: **{percent}%**.",
+        "test_already_passed": "🎉 You already passed the entry test, great work! Head to **Prompt Writing**, **Prompt Validation** and **Answer Voting** to contribute your prompts and validations to the dataset.",
         # Common
         "login_required": "Please log in with Hugging Face first.",
         "load_first": "Load a prompt first.",
@@ -217,10 +218,11 @@ T: dict[str, dict[str, str]] = {
         "test_submit_button": "Enviar test",
         "test_retake_button": "Volver a hacer el test",
         "test_status_taken": "Has obtenido un **{percent}%** en el intento {attempt}. Nota de corte: **{threshold}%**.",
-        "test_status_passed": "🎉 Has obtenido un **{percent}%** en el intento {attempt}. Las pestañas de Escribir, Validar y Votar ya están desbloqueadas.",
+        "test_status_passed": "🎉 Has obtenido un **{percent}%** en el intento {attempt}, ¡buen trabajo! Las pestañas de Escribir, Validar y Votar ya están desbloqueadas para que contribuyas al dataset.",
         "test_status_failed": "Has obtenido un **{percent}%** en el intento {attempt}. Necesitas un **{threshold}%** para desbloquear el resto de la aplicación. Relee la guía y vuelve a intentarlo.",
         "test_status_unanswered": "Por favor, responde a todas las preguntas antes de enviar el test.",
         "test_status_best": "Tu mejor puntuación hasta ahora: **{percent}%**.",
+        "test_already_passed": "🎉 ¡Ya has aprobado el test de acceso, enhorabuena! Pasa a las pestañas **Escribir prompts**, **Validar prompts** y **Votar respuestas** para contribuir al dataset.",
         # Common
         "login_required": "Por favor, inicia sesión con Hugging Face primero.",
         "load_first": "Carga un prompt primero.",
@@ -314,6 +316,7 @@ T: dict[str, dict[str, str]] = {
         "test_status_failed": "Você obteve **{percent}%** na tentativa {attempt}. Precisa de **{threshold}%** para desbloquear o resto da aplicação. Releia as diretrizes e tente novamente.",
         "test_status_unanswered": "Por favor, responda todas as perguntas antes de enviar o teste.",
         "test_status_best": "Sua melhor pontuação até agora: **{percent}%**.",
+        "test_already_passed": "🎉 Você já passou no teste de acesso, parabéns! Vá para as abas **Escrever prompts**, **Validar prompts** e **Votar respostas** para contribuir com o dataset.",
         # Common
         "login_required": "Por favor, entre com o Hugging Face primeiro.",
         "load_first": "Carregue um prompt primeiro.",
@@ -740,6 +743,16 @@ def _test_threshold_pct() -> int:
 def _shuffle_questions(lang: str) -> list[dict]:
     """Return a shuffled copy of the language's question bank."""
     questions = list(load_test_questions(lang))
+    # `submit_test` indexes into two `MAX_TEST_QUESTIONS`-long answer pools,
+    # one per radio in the (reject, accept) pair. If the bank ever grew past
+    # this cap, the indexing would raise IndexError. Catch it at load time
+    # with a clear message instead of letting it surface at grade time.
+    assert len(questions) <= MAX_TEST_QUESTIONS, (
+        f"Question bank has {len(questions)} questions, but "
+        f"MAX_TEST_QUESTIONS={MAX_TEST_QUESTIONS}. Increase the constant in "
+        f"app.py (or reduce TEST_QUESTIONS_PER_CATEGORY in test_data.py) "
+        f"so every question gets a rendered radio."
+    )
     random.shuffle(questions)
     return questions
 
@@ -819,20 +832,40 @@ def load_test(
     for ``demo.load`` and ``retake_btn.click``.
     """
     s = _t(lang)
-    questions = _shuffle_questions(lang)
     intro = s["test_intro"].format(threshold=_test_threshold_pct())
+    empty = [gr.update() for _ in range(MAX_TEST_QUESTIONS)]
+    hidden_blocks = [gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)]
+
+    # Users who have already passed don't need to see the test again — show a
+    # celebratory message that points them at the gated tabs and hide the
+    # intro, questions, submit, and retake buttons. Retaking is silently
+    # accepted (clicking retake just re-shows this message).
+    if profile is not None:
+        best = best_test_score(profile.username, participants_df)
+        if best >= TEST_PASS_THRESHOLD:
+            return (
+                [],
+                gr.update(value="", visible=False),
+                gr.update(value=s["test_already_passed"], visible=True),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                *hidden_blocks,
+                *empty,
+                *empty,
+                *empty,
+            )
+
+    questions = _shuffle_questions(lang)
     if not questions:
         status = s["test_no_questions"]
         # Hide everything: blocks invisible, mds/radios left as no-ops.
-        empty = [gr.update() for _ in range(MAX_TEST_QUESTIONS)]
-        blocks = [gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)]
         return (
             [],
-            gr.update(value=intro),
+            gr.update(value=intro, visible=True),
             gr.update(value=status),
             gr.update(visible=False),
             gr.update(visible=False),
-            *blocks,
+            *hidden_blocks,
             *empty,
             *empty,
             *empty,
@@ -850,7 +883,7 @@ def load_test(
     )
     return (
         questions,
-        gr.update(value=intro),
+        gr.update(value=intro, visible=True),
         gr.update(value=status),
         gr.update(visible=True),
         gr.update(visible=False),
@@ -1322,13 +1355,18 @@ def _build_leaderboard_tab(language: gr.State) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_language(profile: gr.OAuthProfile | None) -> str:
+def _resolve_language(
+    profile: gr.OAuthProfile | None,
+    participants_df: pd.DataFrame | None = None,
+) -> str:
     """Pick the UI language for ``profile`` from the participants dataset.
 
-    Logged-out visitors and unknown users get ``DEFAULT_LANG``."""
+    ``participants_df`` is optional: pass it in when the caller has already
+    loaded the table to avoid a second Hub round-trip on the page-load hot
+    path. Logged-out visitors and unknown users get ``DEFAULT_LANG``."""
     if profile is None:
         return DEFAULT_LANG
-    info = participant_info(profile.username)
+    info = participant_info(profile.username, participants_df)
     if info and info.get("language") in T:
         return info["language"]
     return DEFAULT_LANG
@@ -1342,12 +1380,13 @@ def init_ui(profile: gr.OAuthProfile | None):
     The leaderboard's data is *not* computed here — it's loaded lazily when
     the Leaderboard tab is opened (see ``tab_leaderboard.select``). Init only
     updates leaderboard labels."""
-    lang = _resolve_language(profile)
-    s = _t(lang)
     # One participants-dataset load shared across this page-init —
-    # ``participant_info``, the gate check, and ``load_test`` all consume it.
-    # Without this they'd each call ``load_participants_df`` independently.
+    # ``_resolve_language``, ``participant_info``, the gate check, and
+    # ``load_test`` all consume it. Without this they'd each call
+    # ``load_participants_df`` independently (was 2× on every page open).
     participants_df = load_participants_df() if profile is not None else None
+    lang = _resolve_language(profile, participants_df)
+    s = _t(lang)
     # Country-aware placeholder for the system_prompt textbox — uses the
     # actual default that will be substituted in if the user clicks Save
     # without filling it in.

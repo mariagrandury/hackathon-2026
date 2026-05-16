@@ -51,6 +51,13 @@ ACCEPT_CHOICES = ("knowledge", "preference", "dynamics", "bias_probe")
 VALIDATION_CHOICES = REJECT_CHOICES + ACCEPT_CHOICES
 ACCEPT_VALIDATION_CHOICES = frozenset(ACCEPT_CHOICES)
 
+# Usernames that aren't real participants and must be hidden from user-facing
+# aggregations (leaderboard, known-users list). ``"v0"`` is the author
+# sentinel used by ``import_dpo_pairs.py`` for the ~2k prompts migrated from
+# the 2025 dataset — without this filter it would sit at the top of the
+# ranking with thousands of "prompts sent".
+EXCLUDED_USERNAMES = frozenset({"v0"})
+
 VALIDATION_STRUCT = {"choice": Value("string"), "username": Value("string")}
 VOTE_STRUCT = {"choice": Value("string"), "username": Value("string")}
 
@@ -365,7 +372,7 @@ def all_known_usernames(df: pd.DataFrame) -> list[str]:
     names: set[str] = set(df["username"].dropna().astype(str))
     names.update(_validator_usernames(df))
     names.update(_voter_usernames(df))
-    return sorted(n for n in names if n)
+    return sorted(n for n in names if n and n not in EXCLUDED_USERNAMES)
 
 
 def country_counts(df: pd.DataFrame) -> pd.DataFrame:
@@ -387,14 +394,19 @@ def country_counts(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def ranking_df(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per known user with their three counts, sorted by prompts sent."""
+    """One row per known user with their three counts, sorted by prompts sent.
+    ``EXCLUDED_USERNAMES`` (the ``"v0"`` import sentinel etc.) are filtered
+    out so they don't pollute the leaderboard."""
     columns = ["username", "prompts sent", "prompts validated", "answers voted"]
     if df.empty:
         return pd.DataFrame(columns=columns)
     sent = df["username"].value_counts()
     validated = _validator_usernames(df).value_counts()
     voted = _voter_usernames(df).value_counts()
-    users = sorted(set(sent.index) | set(validated.index) | set(voted.index))
+    users = sorted(
+        (set(sent.index) | set(validated.index) | set(voted.index))
+        - EXCLUDED_USERNAMES
+    )
     out = pd.DataFrame(
         {
             "username": users,

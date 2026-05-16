@@ -213,9 +213,26 @@ def build_participants(csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         )
     )
     if unmapped:
+        bar = "!" * 72
+        print()
+        print(bar)
         print(
-            f"WARNING: {len(unmapped)} country value(s) not in COUNTRY_PATTERNS, "
-            f"imported with a blank country: {unmapped}"
+            f"!! WARNING: {len(unmapped)} country value(s) not in COUNTRY_PATTERNS."
+        )
+        print("!! These rows were imported with a blank country, so participants")
+        print("!! will see ALL prompts in the validation/voting tabs (no country")
+        print("!! filter applies). To fix: add a substring pattern for each entry")
+        print("!! below to COUNTRY_PATTERNS in import_participants_info.py and")
+        print("!! re-run with --push.")
+        print("!!")
+        for v in unmapped:
+            print(f"!!   - {v!r}")
+        print(bar)
+        print()
+    else:
+        print(
+            f"OK: every non-blank country answer matched COUNTRY_PATTERNS "
+            f"({len(valid)} participant(s))."
         )
 
     participants = (
