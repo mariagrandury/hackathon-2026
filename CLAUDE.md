@@ -23,15 +23,25 @@ answers. All state lives in two private datasets on the Hub.
   `cultural_preferences` read + plot rebuild only fires on `tab.select`,
   not on `demo.load`, so page-loads don't pay the leaderboard cost.
 - **`data.py`** — pure data layer. Schemas (`PARTICIPANTS_FEATURES`,
-  `PROMPTS_FEATURES`), I/O (`load_/push_prompts_df`, `participant_info`,
-  `record_test_attempt`), row predicates (`is_fully_validated`,
-  `has_answers`), test-score helpers (`best_test_score`, `parse_test_score`),
-  and aggregations for the leaderboard (`user_stats`, `country_counts`,
-  `ranking_df`). `record_test_attempt` is a commit-style update: it reads
-  the participants table at a specific revision, mutates the user's row,
-  and `create_commit`s with `parent_commit=<that revision>`; on 412 it
-  refetches and retries, so concurrent test submitters don't clobber each
-  other.
+  `PROMPTS_FEATURES`), cached reads (`load_prompts_df` /
+  `load_participants_df` go through a 30 s TTL in-process cache),
+  CAS write paths (`commit_prompts_with_cas`, `record_test_attempt`),
+  in-memory slot reservation table (`reserve_slot` / `release_slot` /
+  `is_slot_reserved_by_other`, 120 s TTL), row predicates
+  (`is_fully_validated`, `has_answers`), test-score helpers
+  (`best_test_score`, `parse_test_score`), and aggregations for the
+  leaderboard (`user_stats`, `country_counts`, `ranking_df`). Both write
+  paths share `_commit_with_cas`: each commit carries the parent SHA the
+  writer was working from; on HTTP 412 the cache is invalidated and the
+  mutator re-runs against the fresh state (jittered exponential backoff,
+  up to `_COMMIT_MAX_RETRIES = 8`). The mutator can return `None` to
+  abort (precondition no longer holds) or a mutated df to commit. Save
+  handlers in `app.py` use the abort path for "already a validator on
+  this row" (silent swallow) and "all three slots claimed" (slot-taken
+  message). Reads use `verification_mode="no_checks"` because CAS commits
+  rewrite only the parquet shard, never `README.md`, so the dataset card's
+  `num_examples` goes stale after the first save; the parquet at the
+  pinned `revision=sha` is authoritative.
 - **`test_data.py`** — question bank + grader for the Entry Test. Reads
   `data/test-2026.json` (currently Spanish-only; other languages reuse it).
   `load_questions` returns classification questions only — `multiple_choice`
@@ -225,21 +235,43 @@ inside the Space because `hf_oauth: true` is set.
 
 ## Caveats
 
-- **Race conditions on prompts writes.** Validation and voting both do
-  `load_dataset` → mutate one cell → `push_to_hub`. Two concurrent writers
-  can pick the same slot and the second push wins. Acceptable for the
-  hackathon; the participants dataset already uses the commit-style pattern
-  described below — the prompts dataset is next on the list if the Space
-  gets contended.
-- **Test-attempt writes are commit-style.** `record_test_attempt` reads
-  the participants table at a specific revision and `create_commit`s with
-  `parent_commit=<that revision>`; on a 412 it refetches HEAD and retries
-  (jittered exponential backoff, up to `_COMMIT_MAX_RETRIES = 8`). So
-  concurrent test submissions retry instead of clobbering. Trade-off: each
-  attempt rewrites the participants Parquet shard, and the retry loop
-  assumes there's exactly one shard (`_participants_parquet_path` raises
-  otherwise). If the dataset ever grows past a single shard, that helper
-  needs updating.
+- **Write paths are CAS, not push_to_hub.** Both `commit_prompts_with_cas`
+  and `record_test_attempt` upload only the parquet shard via
+  `api.create_commit(parent_commit=sha)`; on HTTP 412 (someone else
+  committed since we read) the cache is invalidated, the mutator re-runs
+  against the fresh state, and we retry with jittered exponential backoff
+  up to `_COMMIT_MAX_RETRIES = 8`. The mutator can return `None` to abort
+  cleanly — used by the save handlers for "already a validator on this
+  row" (silent swallow → "saved") and "all three slots claimed by others"
+  (→ slot-taken message). Trade-off: each commit rewrites the entire
+  parquet shard, and the helper assumes the dataset is one shard
+  (`_single_parquet_path` raises otherwise). If either dataset ever grows
+  past a single shard, that helper needs updating.
+- **Read cache is per-process with 30 s TTL.** `load_prompts_df` /
+  `load_participants_df` go through `_cached_load`, so back-to-back tab
+  opens / pickers within the TTL re-use the same df. A successful CAS
+  commit invalidates the cache entry so the next read pulls the freshly-
+  committed state. The cache is local to one process — fine for HF Spaces
+  (single replica by default), but it'd need to be lifted out (Redis,
+  etc.) on a multi-replica deployment.
+- **Slot reservations are per-process, in-memory, 120 s TTL.** The
+  validation and voting pickers call `reserve_slot(idx, slot, user, kind)`
+  before handing a slot to the UI; concurrent pickers see the reservation
+  via `is_slot_reserved_by_other` and walk past, avoiding a CAS conflict.
+  Saves call `release_slot` regardless of outcome. A user who navigates
+  away without saving releases the slot when the TTL expires. Like the
+  read cache, the reservation table is process-local — same multi-replica
+  caveat applies.
+- **`verification_mode="no_checks"` on dataset reads.** CAS commits rewrite
+  the parquet shard but never `README.md`, so the dataset card's
+  `num_examples` goes stale after the first save and the default
+  `basic_checks` would raise `NonMatchingSplitsSizesError` on every read.
+  The parquet at the pinned `revision=sha` is authoritative; file-level
+  integrity is still checked by `hf_hub_download`, schema by pyarrow, and
+  CAS parent-SHA matching is still enforced server-side. The visible cost
+  is that the dataset's page on huggingface.co shows a stale row count;
+  re-running `import_participants_info.py --push` (or any `push_to_hub`)
+  refreshes the card.
 - **`seed_datasets.py` is destructive.** It calls `push_to_hub` with a fresh
   Dataset, overwriting whatever was there. Don't run it casually once real
   prompts are flowing in.
@@ -292,18 +324,17 @@ In rough priority order:
    reaches three positive validations, picks a model pair and fills in the
    answers. Until that exists, the voting tab is empty for any prompt the
    organisers haven't manually answered.
-2. **Atomic row updates for prompts.** The participants dataset already uses
-   `huggingface_hub` commit-style updates with `parent_commit` for optimistic
-   concurrency (see `record_test_attempt` and `_commit_participants`). Port
-   the same pattern to validation and vote writes on `cultural_preferences`
-   so concurrent writers don't clobber each other.
-3. **Pagination / caching for leaderboard.** Cache `load_prompts_df()` for a
-   few seconds, or push aggregations into a separate small dataset that the
-   Space refreshes on a schedule.
-4. **Per-(language, country) quotas.** A dashboard for organisers showing
+2. **Pagination / caching for leaderboard.** The 30 s read cache covers
+   most back-to-back tab opens, but a large dataset still pays an
+   occasional cache-miss cost (full parquet download + pandas conversion).
+   Either push aggregations into a separate small dataset that the Space
+   refreshes on a schedule, or cache `ranking_df` / `country_counts`
+   outputs (not just the raw df) since those are what the leaderboard
+   actually renders.
+3. **Per-(language, country) quotas.** A dashboard for organisers showing
    gaps to fill, plus enforcement on `Save prompt` so the dataset stays
    balanced.
-5. **Keep guideline translations in sync.** `guidelines/guidelines_es.md` is
+4. **Keep guideline translations in sync.** `guidelines/guidelines_es.md` is
    the source of truth for the four-dimension framing
    ([AlKhamissi et al., 2025](https://arxiv.org/abs/2510.05931): knowledge /
    preference / dynamics / bias-trap), the seven-tag validation flow and
@@ -315,15 +346,15 @@ In rough priority order:
    The bias-trap label is localized as "Trampa de sesgo" (ES), "Bias probe"
    (EN), "Armadilha de viés" (PT) — keep the trap metaphor consistent
    across all three.
-6. **Better empty-state UX.** When a tab has nothing to show (e.g. no more
+5. **Better empty-state UX.** When a tab has nothing to show (e.g. no more
    prompts to validate, leaderboard before login), the message is plain
    markdown — could be a friendlier empty state with a CTA pointing to the
    next thing to do.
-7. **End-to-end UI test mode.** Grading is unit-tested in
+6. **End-to-end UI test mode.** Grading is unit-tested in
    `tests/test_grading.py`; what's still missing is a UI walkthrough that
    mocks the HF dataset and stubs OAuth so contributors can drive `app.py`
    end-to-end without an HF token.
-8. **Audit log.** Optional column tracking _who changed what when_ for each
+7. **Audit log.** Optional column tracking _who changed what when_ for each
    slot, so disputed validations/votes can be traced.
 
 ### Entry-test follow-ups (known, deferred)

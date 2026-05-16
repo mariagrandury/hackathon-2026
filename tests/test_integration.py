@@ -66,9 +66,10 @@ PARTICIPANTS_DF = pd.DataFrame(
     ]
 )
 
-# Mutable container — push_prompts_df reassigns into this dict so a later
-# load_prompts_df sees the updated state. Has to be a container (not a
-# bare reassignment) so the closures below capture-by-reference.
+# Mutable container — fake_commit_prompts_with_cas reassigns into this
+# dict so a later load_prompts_df sees the updated state. Has to be a
+# container (not a bare reassignment) so the closures below capture-by-
+# reference.
 STATE: dict = {"prompts": None}
 
 
@@ -216,23 +217,39 @@ def fake_load_prompts() -> pd.DataFrame:
     return STATE["prompts"].copy()
 
 
+def fake_load_prompts_with_sha(fresh: bool = False) -> tuple[str, pd.DataFrame]:
+    # SHA is a no-op for in-memory state; the fake commit always succeeds
+    # and never raises 412, so the CAS layer never inspects this value.
+    return "fake-sha", STATE["prompts"].copy()
+
+
 def fake_load_participants() -> pd.DataFrame:
     return PARTICIPANTS_DF.copy()
 
 
-push_calls: list[tuple[float, int]] = []
+push_calls: list[tuple[float, int, str | None]] = []
 
 
-def fake_push(df: pd.DataFrame, commit_message: str | None = None) -> None:
-    STATE["prompts"] = df.copy()
-    push_calls.append((time.monotonic(), len(df), commit_message))
+def fake_commit_prompts_with_cas(mutator, *, commit_message="update prompts", max_retries=8):
+    """Single-shot stand-in for the real CAS helper: run the mutator on the
+    current STATE['prompts'], install it back if it returns a df, record
+    the commit message. No conflicts — in-memory state can't 412."""
+    df = STATE["prompts"].copy()
+    result = mutator(df)
+    if result is None:
+        return False, 0
+    STATE["prompts"] = result.copy()
+    msg = commit_message(result) if callable(commit_message) else commit_message
+    push_calls.append((time.monotonic(), len(result), msg))
+    return True, 0
 
 
 # Patch BEFORE importing app — app's ``from data import …`` will then pick
 # up the stubs instead of the real HF-hitting functions.
 data.load_prompts_df = fake_load_prompts
+data.load_prompts_with_sha = fake_load_prompts_with_sha
 data.load_participants_df = fake_load_participants
-data.push_prompts_df = fake_push
+data.commit_prompts_with_cas = fake_commit_prompts_with_cas
 
 import app  # noqa: E402
 
@@ -243,13 +260,15 @@ import app  # noqa: E402
 # the stubs work regardless of import order.
 app.load_prompts_df = fake_load_prompts
 app.load_participants_df = fake_load_participants
-app.push_prompts_df = fake_push
+app.commit_prompts_with_cas = fake_commit_prompts_with_cas
 
 # Verify the patches stuck.
 assert (
     app.load_prompts_df is fake_load_prompts
 ), "stub didn't take on app.load_prompts_df"
-assert app.push_prompts_df is fake_push, "stub didn't take on app.push_prompts_df"
+assert (
+    app.commit_prompts_with_cas is fake_commit_prompts_with_cas
+), "stub didn't take on app.commit_prompts_with_cas"
 
 
 # ---------------------------------------------------------------------------
@@ -795,7 +814,7 @@ def main() -> None:
 
     print()
     print("=" * 72)
-    print(f"  Total push_prompts_df calls: {len(push_calls)}")
+    print(f"  Total commit_prompts_with_cas pushes: {len(push_calls)}")
     print(
         f"  Final dataset size: {len(STATE['prompts'])} rows "
         f"(started at {len(_seed_prompts())})"

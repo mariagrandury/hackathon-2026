@@ -4,16 +4,31 @@ Both the participants and the cultural-preferences datasets are private; the
 calling environment must expose ``HF_TOKEN``. On a Hugging Face Space this is
 configured as a secret. Locally, drop a ``.env`` file at the repo root with
 ``HF_TOKEN=hf_...`` and ``python-dotenv`` will load it on import.
+
+Writes to both datasets use optimistic concurrency (compare-and-swap): each
+commit carries the parent SHA the writer was working from. The Hub rejects a
+commit whose parent doesn't match the current head with HTTP 412, which we
+translate to ``CommitConflictError``. ``commit_with_cas`` turns that into a
+refresh-and-retry loop and re-runs the caller's mutator against the refreshed
+state — so a save handler can re-pick a slot if its original target was
+claimed by someone else in the meantime.
+
+Reads go through a short-TTL in-process cache (``_CACHE_TTL_SECONDS``). A
+successful CAS commit updates the cache with the new ``(sha, df)`` so the
+next read is instant. Cache misses pin the read to ``dataset_info().sha``
+so the SHA we use for ``parent_commit`` matches the rows we just read.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import random
+import threading
 import time
-from typing import Optional
+from typing import Callable, Optional, Tuple
 
 import pandas as pd
 from datasets import Dataset, Features, Value, load_dataset
@@ -26,6 +41,106 @@ PROMPTS_REPO = "mariagrandury/cultural_preferences"
 
 load_dotenv()
 HF_TOKEN = os.environ.get("HF_TOKEN")
+
+log = logging.getLogger("hackathon")
+
+# Short-TTL cache for HF dataset reads. Each entry is
+# ``(loaded_at_monotonic, sha, df)``; the SHA is what CAS writers use as
+# ``parent_commit``. A successful commit overwrites the entry with the new
+# (sha, df) so the next reader is instant; on a 412 conflict the entry is
+# invalidated so the retry loop re-fetches.
+_CACHE_TTL_SECONDS = 30.0
+_cache_lock = threading.Lock()
+_cache: dict[str, tuple[float, Optional[str], pd.DataFrame]] = {}
+
+
+class CommitConflictError(Exception):
+    """The push's ``parent_commit`` no longer matches the server's head.
+
+    Raised by the inner ``_commit_*`` wrappers when the Hub returns HTTP
+    412, and caught by ``commit_with_cas`` to drive its retry loop. The
+    original ``HfHubHTTPError`` is kept as ``__cause__`` so callers can
+    chain it through if they want to surface the underlying status."""
+
+
+# Slot reservation table. Optimization on top of CAS: the picker reserves
+# the (row, slot) it hands out so the next concurrent picker walks past it,
+# avoiding the round-trip + 412 + retry that the CAS layer would otherwise
+# absorb. Reservations expire by TTL so a user who navigates away without
+# saving doesn't permanently block the slot.
+#
+# Local to this process — on a multi-replica deployment this would need to
+# move to Redis or similar. HF Spaces are single-process by default, so it's
+# fine here.
+_RESERVATION_TTL_SECONDS = 120.0
+_reservations_lock = threading.Lock()
+# Key is ``(row_idx, slot, kind)`` where kind is ``"validation"`` or
+# ``"vote"``; value is ``(username, expiry_monotonic)``.
+_reservations: dict[tuple[int, int, str], tuple[str, float]] = {}
+
+
+def reserve_slot(idx: int, slot: int, user: str, kind: str) -> bool:
+    """Atomically claim ``(idx, slot, kind)`` for ``user``.
+
+    Returns True if the slot is now reserved by ``user`` — either it was
+    free, expired, or already owned by ``user``. Returns False if someone
+    else still holds a non-expired reservation."""
+    now = time.monotonic()
+    key = (idx, slot, kind)
+    with _reservations_lock:
+        existing = _reservations.get(key)
+        if existing is not None:
+            holder, expiry = existing
+            if holder != user and now < expiry:
+                return False
+        _reservations[key] = (user, now + _RESERVATION_TTL_SECONDS)
+        return True
+
+
+def release_slot(idx: int, slot: int, user: str, kind: str) -> None:
+    """Release the reservation iff it's currently owned by ``user``."""
+    key = (idx, slot, kind)
+    with _reservations_lock:
+        existing = _reservations.get(key)
+        if existing is not None and existing[0] == user:
+            _reservations.pop(key, None)
+
+
+def is_slot_reserved_by_other(idx: int, slot: int, user: str, kind: str) -> bool:
+    """Picker helper: True if another user holds a fresh reservation."""
+    now = time.monotonic()
+    key = (idx, slot, kind)
+    with _reservations_lock:
+        existing = _reservations.get(key)
+        if existing is None:
+            return False
+        holder, expiry = existing
+        return holder != user and now < expiry
+
+
+def _hf_api() -> HfApi:
+    return HfApi(token=HF_TOKEN)
+
+
+def _cache_get(key: str) -> Optional[tuple[Optional[str], pd.DataFrame]]:
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is None:
+            return None
+        loaded_at, sha, df = hit
+        if (time.monotonic() - loaded_at) >= _CACHE_TTL_SECONDS:
+            return None
+        return sha, df
+
+
+def _cache_put(key: str, sha: Optional[str], df: pd.DataFrame) -> None:
+    with _cache_lock:
+        _cache[key] = (time.monotonic(), sha, df)
+
+
+def _cache_invalidate(key: str) -> None:
+    with _cache_lock:
+        _cache.pop(key, None)
 
 EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
@@ -138,39 +253,83 @@ def country_display(code: str | None) -> str:
     return COUNTRY_DISPLAY_NAMES.get(code, code.upper())
 
 
-def load_participants_df() -> pd.DataFrame:
-    return load_dataset(PARTICIPANTS_REPO, split="train", token=HF_TOKEN).to_pandas()
+def _fetch_dataset(repo_id: str, sha: str | None = None) -> pd.DataFrame:
+    """Read ``repo_id`` from the Hub, optionally pinned to ``sha``.
+
+    ``verification_mode="no_checks"`` skips the split-size verification
+    against the dataset card's metadata: CAS commits rewrite only the
+    parquet shard, not ``README.md``, so the card's recorded
+    ``num_examples`` goes stale after the first save. The parquet at the
+    pinned ``revision=sha`` is authoritative; file-level integrity is
+    still checked by ``hf_hub_download`` and schema by pyarrow."""
+    kwargs: dict = {
+        "split": "train",
+        "token": HF_TOKEN,
+        "verification_mode": "no_checks",
+    }
+    if sha is not None:
+        kwargs["revision"] = sha
+    return load_dataset(repo_id, **kwargs).to_pandas()
 
 
-def push_participants_df(df: pd.DataFrame, commit_message: str | None = None) -> None:
-    Dataset.from_pandas(
-        df, preserve_index=False, features=PARTICIPANTS_FEATURES
-    ).push_to_hub(
-        PARTICIPANTS_REPO,
-        private=True,
-        token=HF_TOKEN,
-        commit_message=commit_message,
+def _fetch_with_sha(repo_id: str) -> tuple[str, pd.DataFrame]:
+    """Read ``repo_id`` pinned to its current HEAD SHA.
+
+    The SHA is what CAS writers use as ``parent_commit``. Pinning the read
+    to the SHA we just looked up closes a tiny window where ``load_dataset``
+    might otherwise resolve to a different revision than ``dataset_info``
+    reported a moment later."""
+    info = _hf_api().dataset_info(repo_id=repo_id, token=HF_TOKEN)
+    sha = info.sha
+    df = _fetch_dataset(repo_id, sha=sha)
+    return sha, df
+
+
+def _cached_load(
+    repo_id: str, *, fresh: bool = False
+) -> tuple[Optional[str], pd.DataFrame]:
+    """Return ``(sha, df)`` for ``repo_id`` from the in-process cache, or
+    refetch on miss / when ``fresh=True``. ``sha`` is the revision the df
+    was read at — pass it back as ``parent_commit`` for CAS writes."""
+    if not fresh:
+        hit = _cache_get(repo_id)
+        if hit is not None:
+            return hit
+    t0 = time.monotonic()
+    sha, df = _fetch_with_sha(repo_id)
+    log.info(
+        "cache miss: loaded %s in %.2fs (rows=%d, sha=%s)",
+        repo_id,
+        time.monotonic() - t0,
+        len(df),
+        (sha[:8] if sha else "n/a"),
     )
+    _cache_put(repo_id, sha, df)
+    return sha, df
+
+
+def load_participants_df() -> pd.DataFrame:
+    _, df = _cached_load(PARTICIPANTS_REPO)
+    return df
 
 
 def load_prompts_df() -> pd.DataFrame:
-    return load_dataset(PROMPTS_REPO, split="train", token=HF_TOKEN).to_pandas()
+    _, df = _cached_load(PROMPTS_REPO)
+    return df
 
 
-def push_prompts_df(df: pd.DataFrame, commit_message: str | None = None) -> None:
-    """Push ``df`` to the prompts repo with an optional commit message.
+def load_prompts_with_sha(fresh: bool = False) -> tuple[str, pd.DataFrame]:
+    """Read path for CAS write handlers — returns ``(sha, df)`` so the
+    caller can hand ``sha`` back as ``parent_commit`` when it pushes."""
+    sha, df = _cached_load(PROMPTS_REPO, fresh=fresh)
+    assert sha is not None, "prompts cache entry must carry a SHA"
+    return sha, df
 
-    Callers pass a per-action message like
-    ``"mariagrandury validated prompt with ID 42"`` so the HF repo's commit
-    history reads like an activity log (visible on huggingface.co)."""
-    Dataset.from_pandas(
-        df, preserve_index=False, features=PROMPTS_FEATURES
-    ).push_to_hub(
-        PROMPTS_REPO,
-        private=True,
-        token=HF_TOKEN,
-        commit_message=commit_message,
-    )
+
+def load_participants_with_sha(fresh: bool = False) -> tuple[str, pd.DataFrame]:
+    sha, df = _cached_load(PARTICIPANTS_REPO, fresh=fresh)
+    assert sha is not None, "participants cache entry must carry a SHA"
+    return sha, df
 
 
 def participant_info(username: str, df: pd.DataFrame | None = None) -> Optional[dict]:
@@ -205,29 +364,66 @@ def best_test_score(username: str | None, df: pd.DataFrame | None = None) -> flo
     return max(scores.values()) if scores else 0.0
 
 
-# How many times to retry the commit-style update of the participants
-# dataset when another writer landed in between. Hackathon contention is
-# bounded by Hub commit throughput (~hundreds of ms each), so a handful
-# of retries with jittered exponential backoff is enough in practice.
+# How many times to retry a CAS commit when another writer landed in
+# between. Hackathon contention is bounded by Hub commit throughput
+# (~hundreds of ms each), so a handful of retries with jittered exponential
+# backoff is enough in practice.
 _COMMIT_MAX_RETRIES = 8
 
 
-def _participants_parquet_path(api: HfApi) -> str:
-    """Locate the single Parquet shard of the participants dataset on the
-    Hub. ``Dataset.push_to_hub`` writes one
-    ``data/train-XXXXX-of-XXXXX.parquet`` for a sub-1000-row table; we
-    replace that same path on commit-style updates so we don't leave orphan
-    shards behind."""
+def _single_parquet_path(api: HfApi, repo_id: str) -> str:
+    """Locate the single Parquet shard of ``repo_id`` on the Hub.
+
+    ``Dataset.push_to_hub`` writes one ``data/train-XXXXX-of-XXXXX.parquet``
+    for a small table; we replace that same path on CAS updates so we don't
+    leave orphan shards behind. Raises if the dataset has grown past a
+    single shard — at that point this helper needs a real shard strategy."""
     files = api.list_repo_files(
-        repo_id=PARTICIPANTS_REPO, repo_type="dataset", token=HF_TOKEN
+        repo_id=repo_id, repo_type="dataset", token=HF_TOKEN
     )
     parquets = [f for f in files if f.endswith(".parquet")]
     if len(parquets) != 1:
         raise RuntimeError(
-            f"expected exactly one parquet shard in {PARTICIPANTS_REPO}, "
+            f"expected exactly one parquet shard in {repo_id}, "
             f"got {len(parquets)}: {parquets!r}"
         )
     return parquets[0]
+
+
+def _participants_parquet_path(api: HfApi) -> str:
+    """Back-compat shim — kept for the existing test mocks that patch this
+    by name."""
+    return _single_parquet_path(api, PARTICIPANTS_REPO)
+
+
+def _prompts_parquet_path(api: HfApi) -> str:
+    return _single_parquet_path(api, PROMPTS_REPO)
+
+
+def _commit_dataset(
+    df: pd.DataFrame,
+    *,
+    api: HfApi,
+    repo_id: str,
+    path_in_repo: str,
+    features: Features,
+    parent_commit: str,
+    commit_message: str,
+) -> None:
+    """Replace the dataset's single Parquet shard at ``path_in_repo`` with
+    the encoded ``df``, requiring the repo to still be at ``parent_commit``.
+    Raises ``HfHubHTTPError`` with status 412 if another writer landed first."""
+    buf = io.BytesIO()
+    Dataset.from_pandas(df, preserve_index=False, features=features).to_parquet(buf)
+    buf.seek(0)
+    api.create_commit(
+        repo_id=repo_id,
+        repo_type="dataset",
+        operations=[CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)],
+        commit_message=commit_message,
+        parent_commit=parent_commit,
+        token=HF_TOKEN,
+    )
 
 
 def _commit_participants(
@@ -238,52 +434,162 @@ def _commit_participants(
     parent_commit: str,
     commit_message: str,
 ) -> None:
-    """Replace the participants Parquet shard at ``path_in_repo`` with the
-    encoded ``df``, requiring the repo to still be at ``parent_commit``.
-    Raises ``HfHubHTTPError`` with status 412 if another writer landed
-    first — caller is expected to re-read and retry."""
-    buf = io.BytesIO()
-    Dataset.from_pandas(
-        df, preserve_index=False, features=PARTICIPANTS_FEATURES
-    ).to_parquet(buf)
-    buf.seek(0)
-    api.create_commit(
+    _commit_dataset(
+        df,
+        api=api,
         repo_id=PARTICIPANTS_REPO,
-        repo_type="dataset",
-        operations=[CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)],
-        commit_message=commit_message,
+        path_in_repo=path_in_repo,
+        features=PARTICIPANTS_FEATURES,
         parent_commit=parent_commit,
-        token=HF_TOKEN,
+        commit_message=commit_message,
+    )
+
+
+def _commit_prompts(
+    df: pd.DataFrame,
+    *,
+    api: HfApi,
+    path_in_repo: str,
+    parent_commit: str,
+    commit_message: str,
+) -> None:
+    _commit_dataset(
+        df,
+        api=api,
+        repo_id=PROMPTS_REPO,
+        path_in_repo=path_in_repo,
+        features=PROMPTS_FEATURES,
+        parent_commit=parent_commit,
+        commit_message=commit_message,
+    )
+
+
+def _commit_with_cas(
+    *,
+    repo_id: str,
+    fetch: Callable[[bool], tuple[str, pd.DataFrame]],
+    mutator: Callable[[pd.DataFrame], Optional[pd.DataFrame]],
+    commit: Callable[[pd.DataFrame, str], None],
+    max_retries: int = _COMMIT_MAX_RETRIES,
+) -> Tuple[Optional[bool], int]:
+    """Apply ``mutator`` and push via ``commit`` under compare-and-swap.
+
+    Steps each attempt:
+
+      1. ``fetch(fresh)`` returns ``(parent_sha, df)``. ``fresh=True`` on
+         retries to bypass the cache and read the new HEAD.
+      2. ``mutator(df.copy())`` decides what to do given the current state.
+         It returns either:
+           * a mutated df → commit it
+           * ``None``     → abort (e.g. precondition no longer holds)
+      3. ``commit(df, parent_sha)`` uploads. On HTTP 412 (another writer
+         landed since we read), the cache is invalidated and the loop
+         re-runs — the mutator gets to re-evaluate against the new state.
+
+    Returns ``(status, attempts_used)``:
+      * ``(True, n)``    committed after ``n + 1`` attempts
+      * ``(False, n)``   ``mutator`` returned ``None`` on attempt ``n + 1``
+      * ``(None, ...)``  raises ``RuntimeError`` after ``max_retries``
+        consecutive 412s (chained from the last ``HfHubHTTPError``).
+    """
+    last_conflict: HfHubHTTPError | None = None
+    for retry in range(max_retries):
+        parent_sha, df = fetch(retry > 0)
+        result = mutator(df.copy())
+        if result is None:
+            return False, retry
+        try:
+            commit(result, parent_sha)
+        except HfHubHTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status != 412:
+                raise
+            log.info(
+                "commit conflict on %s: parent=%s no longer matches HEAD",
+                repo_id,
+                parent_sha[:8],
+            )
+            _cache_invalidate(repo_id)
+            last_conflict = exc
+            # Jittered exponential backoff: 50ms · 2^retry · [0.5, 1.5).
+            time.sleep(0.05 * (2**retry) * (0.5 + random.random()))
+            continue
+        # Success — refresh the cache with our committed state so the next
+        # reader doesn't pay a Hub round-trip. We don't have the new SHA
+        # without another dataset_info call; invalidate instead so the next
+        # writer refetches a real SHA before committing.
+        _cache_invalidate(repo_id)
+        return True, retry
+    raise RuntimeError(
+        f"could not commit to {repo_id} after {max_retries} retries"
+    ) from last_conflict
+
+
+def commit_prompts_with_cas(
+    mutator: Callable[[pd.DataFrame], Optional[pd.DataFrame]],
+    *,
+    commit_message: str | Callable[[pd.DataFrame], str] = "update prompts",
+    max_retries: int = _COMMIT_MAX_RETRIES,
+) -> Tuple[Optional[bool], int]:
+    """CAS wrapper for the prompts dataset. See ``_commit_with_cas`` for the
+    return-value contract.
+
+    ``commit_message`` can be a callable that takes the mutated df and
+    returns the message — useful when the message depends on per-mutation
+    state (e.g. the freshly-assigned row id) and would be stale if computed
+    outside the retry loop."""
+    api = _hf_api()
+    path_in_repo = _prompts_parquet_path(api)
+
+    def fetch(fresh: bool) -> tuple[str, pd.DataFrame]:
+        return load_prompts_with_sha(fresh=fresh)
+
+    def commit(df: pd.DataFrame, parent_sha: str) -> None:
+        msg = commit_message(df) if callable(commit_message) else commit_message
+        _commit_prompts(
+            df,
+            api=api,
+            path_in_repo=path_in_repo,
+            parent_commit=parent_sha,
+            commit_message=msg,
+        )
+
+    return _commit_with_cas(
+        repo_id=PROMPTS_REPO,
+        fetch=fetch,
+        mutator=mutator,
+        commit=commit,
+        max_retries=max_retries,
     )
 
 
 def record_test_attempt(username: str, score: float) -> int:
-    """Append ``score`` as the next attempt for ``username`` via a
-    commit-style update: read the participants dataset at a specific
-    revision, mutate the user's row, then commit with
-    ``parent_commit=<that revision>``. If another writer landed in between
-    the Hub returns 412, we reload at the new HEAD and retry — so two
-    concurrent submitters retry instead of clobbering each other's scores.
+    """Append ``score`` as the next attempt for ``username`` via CAS.
 
     Returns the new attempt number (1-indexed). Raises ``LookupError`` if
     the user isn't a registered participant; ``RuntimeError`` if all
     retries kept losing the race (shouldn't happen for hackathon-scale
     contention)."""
-    api = HfApi(token=HF_TOKEN)
+    api = _hf_api()
     path_in_repo = _participants_parquet_path(api)
-    last_conflict: HfHubHTTPError | None = None
-    for retry in range(_COMMIT_MAX_RETRIES):
+    captured_attempt: list[int] = []
+
+    def fetch(_fresh: bool) -> tuple[str, pd.DataFrame]:
+        # ``record_test_attempt`` writes are rare; bypass the cache entirely
+        # so we never operate on a stale snapshot. (Each call reads HEAD
+        # directly via ``api.dataset_info`` + ``load_dataset(revision=…)``,
+        # matching the pre-refactor behaviour the tests expect.)
         info = api.dataset_info(repo_id=PARTICIPANTS_REPO, token=HF_TOKEN)
-        parent_sha = info.sha
-        # Load at the exact SHA we're about to use as parent_commit. Varying
-        # ``revision`` bypasses datasets' in-process cache so we always see
-        # the latest writes.
+        sha = info.sha
         df = load_dataset(
             PARTICIPANTS_REPO,
             split="train",
             token=HF_TOKEN,
-            revision=parent_sha,
+            revision=sha,
         ).to_pandas()
+        return sha, df
+
+    def mutator(df: pd.DataFrame) -> pd.DataFrame:
         matches = df.index[df["username"] == username].tolist()
         if not matches:
             raise LookupError(f"user {username!r} is not in the participants dataset")
@@ -292,27 +598,28 @@ def record_test_attempt(username: str, score: float) -> int:
         attempt = max((int(k) for k in scores), default=0) + 1
         scores[str(attempt)] = float(score)
         df.at[idx, "test_score"] = json.dumps(scores)
-        try:
-            _commit_participants(
-                df,
-                api=api,
-                path_in_repo=path_in_repo,
-                parent_commit=parent_sha,
-                commit_message=(
-                    f"{username} took the test (attempt {attempt}): {score:.2f}"
-                ),
-            )
-            return attempt
-        except HfHubHTTPError as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            if status != 412:
-                raise
-            last_conflict = exc
-            # Jittered exponential backoff: 50ms · 2^retry · [0.5, 1.5).
-            time.sleep(0.05 * (2**retry) * (0.5 + random.random()))
-    raise RuntimeError(
-        f"could not record test attempt after {_COMMIT_MAX_RETRIES} retries"
-    ) from last_conflict
+        captured_attempt.append(attempt)
+        return df
+
+    def commit(df: pd.DataFrame, parent_sha: str) -> None:
+        _commit_participants(
+            df,
+            api=api,
+            path_in_repo=path_in_repo,
+            parent_commit=parent_sha,
+            commit_message=(
+                f"{username} took the test (attempt {captured_attempt[-1]}): "
+                f"{score:.2f}"
+            ),
+        )
+
+    _commit_with_cas(
+        repo_id=PARTICIPANTS_REPO,
+        fetch=fetch,
+        mutator=mutator,
+        commit=commit,
+    )
+    return captured_attempt[-1]
 
 
 def is_fully_validated(row) -> bool:

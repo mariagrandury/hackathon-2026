@@ -42,16 +42,19 @@ from data import (
     TEST_PASS_THRESHOLD,
     VALIDATION_CHOICES,
     best_test_score,
+    commit_prompts_with_cas,
     country_counts,
     country_display,
     has_answers,
     is_fully_validated,
+    is_slot_reserved_by_other,
     load_participants_df,
     load_prompts_df,
     participant_info,
-    push_prompts_df,
     ranking_df,
     record_test_attempt,
+    release_slot,
+    reserve_slot,
     user_stats,
 )
 from test_data import grade as grade_test
@@ -148,6 +151,7 @@ T: dict[str, dict[str, str]] = {
         "writing_empty": "Prompt cannot be empty.",
         "writing_not_participant": "User `{username}` is not registered as a hackathon participant. Ask the organisers to add you.",
         "writing_saved": "Prompt saved. Thanks!",
+        "writing_conflict_retry": "Could not save right now (busy). Please try again.",
         # Validation
         "validation_load_status_initial": "Click **Load next prompt** to start validating.",
         "validation_prompt_label": "Prompt to validate",
@@ -167,6 +171,8 @@ T: dict[str, dict[str, str]] = {
         "validation_in_progress": "Validating prompt #{id} ({country}).",
         "validation_no_more": "No more prompts available for validation right now.",
         "validation_saved": "Validation saved.",
+        "validation_slot_taken": "All slots were just filled by others — your validation was not saved. Loaded a new prompt.",
+        "validation_conflict_retry": "Could not save right now (busy). Please try again.",
         # Voting
         "voting_load_status_initial": "Click **Load next prompt** to start voting.",
         "voting_prompt_label": "Prompt",
@@ -179,6 +185,8 @@ T: dict[str, dict[str, str]] = {
         "voting_none_button": "No good",
         "voting_in_progress": "Voting on prompt #{id} ({country}).",
         "voting_no_more": "No more validated prompts available for voting right now.",
+        "voting_slot_taken": "All vote slots were just filled by others — your vote was not saved.",
+        "voting_conflict_retry": "Could not save right now (busy). Please try again.",
         # Leaderboard
         "leaderboard_refresh_button": "Refresh",
         "leaderboard_user_plot_label": "Your progress (goal = {goal})",
@@ -241,6 +249,7 @@ T: dict[str, dict[str, str]] = {
         "writing_empty": "El prompt no puede estar vacío.",
         "writing_not_participant": "El usuario `{username}` no está registrado como participante del hackathon. Pide a los organizadores que te añadan.",
         "writing_saved": "Prompt guardado. ¡Gracias!",
+        "writing_conflict_retry": "No se pudo guardar ahora mismo (ocupado). Inténtalo de nuevo.",
         # Validation
         "validation_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a validar.",
         "validation_prompt_label": "Prompt a validar",
@@ -260,6 +269,8 @@ T: dict[str, dict[str, str]] = {
         "validation_in_progress": "Validando el prompt #{id} ({country}).",
         "validation_no_more": "No hay más prompts disponibles para validar ahora mismo.",
         "validation_saved": "Validación guardada.",
+        "validation_slot_taken": "Otras personas acaban de llenar los huecos — tu validación no se guardó. Se ha cargado un nuevo prompt.",
+        "validation_conflict_retry": "No se pudo guardar ahora mismo (ocupado). Inténtalo de nuevo.",
         # Voting
         "voting_load_status_initial": "Haz clic en **Cargar siguiente prompt** para empezar a votar.",
         "voting_prompt_label": "Prompt",
@@ -272,6 +283,8 @@ T: dict[str, dict[str, str]] = {
         "voting_none_button": "Ninguna buena",
         "voting_in_progress": "Votando el prompt #{id} ({country}).",
         "voting_no_more": "No hay más prompts validados disponibles para votar ahora mismo.",
+        "voting_slot_taken": "Otras personas acaban de llenar los huecos de voto — tu voto no se guardó.",
+        "voting_conflict_retry": "No se pudo guardar ahora mismo (ocupado). Inténtalo de nuevo.",
         # Leaderboard
         "leaderboard_refresh_button": "Actualizar",
         "leaderboard_user_plot_label": "Tu progreso (objetivo = {goal})",
@@ -334,6 +347,7 @@ T: dict[str, dict[str, str]] = {
         "writing_empty": "O prompt não pode estar vazio.",
         "writing_not_participant": "O usuário `{username}` não está registrado como participante do hackathon. Peça aos organizadores para adicioná-lo.",
         "writing_saved": "Prompt salvo. Obrigado!",
+        "writing_conflict_retry": "Não foi possível salvar agora (ocupado). Tente novamente.",
         # Validation
         "validation_load_status_initial": "Clique em **Carregar próximo prompt** para começar a validar.",
         "validation_prompt_label": "Prompt a validar",
@@ -353,6 +367,8 @@ T: dict[str, dict[str, str]] = {
         "validation_in_progress": "Validando o prompt #{id} ({country}).",
         "validation_no_more": "Não há mais prompts disponíveis para validação no momento.",
         "validation_saved": "Validação salva.",
+        "validation_slot_taken": "Outras pessoas acabaram de preencher as vagas — sua validação não foi salva. Carregamos um novo prompt.",
+        "validation_conflict_retry": "Não foi possível salvar agora (ocupado). Tente novamente.",
         # Voting
         "voting_load_status_initial": "Clique em **Carregar próximo prompt** para começar a votar.",
         "voting_prompt_label": "Prompt",
@@ -365,6 +381,8 @@ T: dict[str, dict[str, str]] = {
         "voting_none_button": "Nenhuma boa",
         "voting_in_progress": "Votando no prompt #{id} ({country}).",
         "voting_no_more": "Não há mais prompts validados disponíveis para votação no momento.",
+        "voting_slot_taken": "Outras pessoas acabaram de preencher as vagas de voto — seu voto não foi salvo.",
+        "voting_conflict_retry": "Não foi possível salvar agora (ocupado). Tente novamente.",
         # Leaderboard
         "leaderboard_refresh_button": "Atualizar",
         "leaderboard_user_plot_label": "Seu progresso (meta = {goal})",
@@ -453,7 +471,7 @@ def save_prompt(
     lang: str,
     profile: gr.OAuthProfile | None,
 ):
-    """Append a new prompt and clear the textboxes on success.
+    """Append a new prompt under CAS and clear the textboxes on success.
 
     Returns ``(status, system_box_update, prompt_box_update)``. On failure
     the textboxes are left untouched (``gr.update()`` with no args), so the
@@ -473,8 +491,6 @@ def save_prompt(
             keep,
         )
 
-    df = load_prompts_df()
-    next_id = int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
     # If the user left the system_prompt blank, fill it in with the
     # country-aware default ("Eres un asistente de IA de {country}…") —
     # matches the gray placeholder shown in the textbox so the saved value
@@ -482,34 +498,49 @@ def save_prompt(
     sys_text = (system_prompt or "").strip()
     if not sys_text:
         sys_text = _default_system_prompt(lang, info.get("country"))
-    new_row = {
-        "id": next_id,
-        "username": profile.username,
-        "language": info["language"],
-        "country": info["country"],
-        "system_prompt": sys_text,
-        "prompt": prompt.strip(),
-        "prompt_validation_1": dict(EMPTY_VALIDATION),
-        "prompt_validation_2": dict(EMPTY_VALIDATION),
-        "prompt_validation_3": dict(EMPTY_VALIDATION),
-        "answer_a": "",
-        "model_a": "",
-        "answer_b": "",
-        "model_b": "",
-        "answer_chosen_1": dict(EMPTY_VOTE),
-        "answer_chosen_2": dict(EMPTY_VOTE),
-        "answer_chosen_3": dict(EMPTY_VOTE),
-    }
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    push_prompts_df(
-        df,
-        commit_message=f"{profile.username} sent prompt with ID {next_id}",
+
+    # The ``id`` is assigned inside the mutator so a retry after a conflict
+    # picks up the *new* max — otherwise two concurrent appenders both think
+    # they're id=N+1 and the loser would commit with a stale id.
+    def mutator(df: pd.DataFrame) -> pd.DataFrame:
+        next_id = (
+            int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
+        )
+        new_row = {
+            "id": next_id,
+            "username": profile.username,
+            "language": info["language"],
+            "country": info["country"],
+            "system_prompt": sys_text,
+            "prompt": prompt.strip(),
+            "prompt_validation_1": dict(EMPTY_VALIDATION),
+            "prompt_validation_2": dict(EMPTY_VALIDATION),
+            "prompt_validation_3": dict(EMPTY_VALIDATION),
+            "answer_a": "",
+            "model_a": "",
+            "answer_b": "",
+            "model_b": "",
+            "answer_chosen_1": dict(EMPTY_VOTE),
+            "answer_chosen_2": dict(EMPTY_VOTE),
+            "answer_chosen_3": dict(EMPTY_VOTE),
+        }
+        return pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+    status, attempts = commit_prompts_with_cas(
+        mutator,
+        commit_message=lambda df: (
+            f"{profile.username} sent prompt with ID {int(df['id'].iloc[-1])}"
+        ),
     )
-    return (
-        s["writing_saved"],
-        gr.update(value=""),  # clear system_box
-        gr.update(value=""),  # clear prompt_box
-    )
+    if attempts > 0:
+        log.info("save_prompt took %d retries (status=%s)", attempts, status)
+    if status is True:
+        return (
+            s["writing_saved"],
+            gr.update(value=""),  # clear system_box
+            gr.update(value=""),  # clear prompt_box
+        )
+    return s["writing_conflict_retry"], keep, keep
 
 
 # ---------------------------------------------------------------------------
@@ -523,11 +554,13 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
 
     Filters to the user's own country (only prompts grounded in their
     culture are shown). Users with no registered country fall through and
-    see all prompts."""
+    see all prompts. Reserves the returned ``(idx, slot)`` so a concurrent
+    picker walks past it instead of bouncing through the CAS retry loop."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", s["login_required"]
-    info = participant_info(profile.username)
+    user = profile.username
+    info = participant_info(user)
     user_country = info.get("country") if info else None
     df = load_prompts_df()
     # Randomize iteration order so two users hitting "Load next" at the
@@ -540,30 +573,35 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
         row = df.loc[idx]
         if user_country and row.get("country") != user_country:
             continue
-        if row["username"] == profile.username:
+        if row["username"] == user:
             continue
         if any(
-            row[f"prompt_validation_{i}"]["username"] == profile.username
+            row[f"prompt_validation_{i}"]["username"] == user
             for i in (1, 2, 3)
         ):
             continue
         for i in (1, 2, 3):
-            if not row[f"prompt_validation_{i}"]["username"]:
-                display = _merged_prompt_display(
-                    lang,
-                    row.get("system_prompt", ""),
-                    row["prompt"],
-                )
-                prompt_id = int(row.get("id", idx))
-                return (
-                    int(idx),
-                    i,
-                    display,
-                    s["validation_in_progress"].format(
-                        id=prompt_id,
-                        country=country_display(row.get("country")),
-                    ),
-                )
+            if row[f"prompt_validation_{i}"]["username"]:
+                continue
+            if is_slot_reserved_by_other(int(idx), i, user, "validation"):
+                continue
+            if not reserve_slot(int(idx), i, user, "validation"):
+                continue
+            display = _merged_prompt_display(
+                lang,
+                row.get("system_prompt", ""),
+                row["prompt"],
+            )
+            prompt_id = int(row.get("id", idx))
+            return (
+                int(idx),
+                i,
+                display,
+                s["validation_in_progress"].format(
+                    id=prompt_id,
+                    country=country_display(row.get("country")),
+                ),
+            )
     return -1, -1, "", s["validation_no_more"]
 
 
@@ -575,17 +613,18 @@ def save_validation(
     lang: str,
     profile: gr.OAuthProfile | None,
 ):
-    """Record the validation, then auto-advance to the next prompt and
-    reset both choice radios.
+    """Record the validation under CAS, then auto-advance to the next prompt.
 
     The validation tab has two radios (Reject | Accept) kept mutually
     exclusive, so at most one of ``reject_choice``/``accept_choice`` is set;
     the other is ``None``. Returns updates for ``(idx_state, slot_state,
     current_prompt, reject_radio, accept_radio, load_status, save_status)``.
-    On input-validation errors the visible inputs are left untouched
-    (``gr.update()``); on successful save the next prompt is loaded and both
-    radios cleared so the user has an unambiguous cue that the previous
-    validation went through."""
+
+    Smart slot retry inside CAS: if the picker's slot was claimed in
+    between (different user committed first), the mutator falls back to any
+    remaining empty slot on the same row before giving up. Already-a-
+    validator on the row is a silent no-op (same status as a real save —
+    duplicate submissions from a stale tab shouldn't surface as errors)."""
     s = _t(lang)
     keep_state = (
         gr.update(),  # idx_state
@@ -602,32 +641,59 @@ def save_validation(
         return (*keep_state, s["load_first"])
     if choice not in VALIDATION_CHOICES:
         return (*keep_state, s["validation_choice_required"])
-    df = load_prompts_df()
-    if idx >= len(df):
-        return (*keep_state, s["out_of_range"])
 
-    # Defensive: if this user is already a validator on this row (stale
-    # form, second browser tab, replayed request, etc.) swallow the
-    # duplicate silently — their intent is already fulfilled by the
-    # earlier save. Advance to the next prompt as if it had just landed.
-    already = any(
-        df.at[idx, f"prompt_validation_{i}"]["username"] == profile.username
-        for i in (1, 2, 3)
+    user = profile.username
+    # The mutator distinguishes three outcomes:
+    #   * ``already_validated`` — user is already a validator on this row
+    #     (stale form / second tab) → silent swallow, return None so the
+    #     CAS layer doesn't commit but we report "saved" to the user.
+    #   * a mutated df → committed normally.
+    #   * ``None`` without the flag → all 3 slots are claimed by other
+    #     users; report "slot taken" and advance.
+    already_validated = [False]
+
+    def mutator(df: pd.DataFrame):
+        if idx >= len(df):
+            return None
+        for i in (1, 2, 3):
+            if df.at[idx, f"prompt_validation_{i}"]["username"] == user:
+                already_validated[0] = True
+                return None
+        # Prefer the picker's chosen slot; if taken, fall back to any
+        # remaining empty slot before giving up.
+        for try_slot in (slot, *(o for o in (1, 2, 3) if o != slot)):
+            if not df.at[idx, f"prompt_validation_{try_slot}"]["username"]:
+                df.at[idx, f"prompt_validation_{try_slot}"] = {
+                    "choice": choice,
+                    "username": user,
+                }
+                return df
+        return None  # all 3 slots claimed by others
+
+    status, attempts = commit_prompts_with_cas(
+        mutator,
+        commit_message=lambda df: (
+            f"{user} validated prompt with ID "
+            f"{int(df.at[idx, 'id']) if 'id' in df.columns else int(idx)}"
+        ),
     )
-    if already:
-        log.info("skipped double-validation: user=%s row=%d", profile.username, idx)
-    else:
-        df.at[idx, f"prompt_validation_{slot}"] = {
-            "choice": choice,
-            "username": profile.username,
-        }
-        prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
-        push_prompts_df(
-            df,
-            commit_message=f"{profile.username} validated prompt with ID {prompt_id}",
-        )
+    # Release the picker's reservation regardless of outcome. If smart
+    # retry landed in a different slot, that other slot is now non-empty
+    # in the dataset, so pickers will naturally skip it.
+    release_slot(idx, slot, user, "validation")
+    if attempts > 0:
+        log.info("save_validation took %d retries (status=%s)", attempts, status)
 
-    # Advance to the next prompt and reset both radios.
+    if status is True or already_validated[0]:
+        save_msg = s["validation_saved"]
+        if already_validated[0]:
+            log.info("skipped double-validation: user=%s row=%d", user, idx)
+    elif status is False:
+        save_msg = s["validation_slot_taken"]
+    else:
+        save_msg = s["validation_conflict_retry"]
+
+    # Always advance to the next prompt and reset both radios.
     next_idx, next_slot, next_prompt, next_status = fetch_next_validation(lang, profile)
     return (
         next_idx,  # idx_state
@@ -636,7 +702,7 @@ def save_validation(
         gr.update(value=None),  # reject_radio reset
         gr.update(value=None),  # accept_radio reset
         next_status,  # load_status
-        s["validation_saved"],  # save_status (same whether we wrote or skipped)
+        save_msg,  # save_status
     )
 
 
@@ -651,11 +717,13 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
 
     Users *can* vote on their own prompts (unlike validation). Filters to
     the user's own country — voters only judge cultural appropriateness of
-    answers grounded in their own culture."""
+    answers grounded in their own culture. Reserves the returned slot so
+    concurrent voters bypass it instead of bouncing through CAS retries."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
-    info = participant_info(profile.username)
+    user = profile.username
+    info = participant_info(user)
     user_country = info.get("country") if info else None
     df = load_prompts_df()
     # Randomize iteration order — see note on fetch_next_validation.
@@ -668,28 +736,33 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
         if not is_fully_validated(row) or not has_answers(row):
             continue
         if any(
-            row[f"answer_chosen_{i}"]["username"] == profile.username for i in (1, 2, 3)
+            row[f"answer_chosen_{i}"]["username"] == user for i in (1, 2, 3)
         ):
             continue
         for i in (1, 2, 3):
-            if not row[f"answer_chosen_{i}"]["username"]:
-                display = _merged_prompt_display(
-                    lang,
-                    row.get("system_prompt", ""),
-                    row["prompt"],
-                )
-                prompt_id = int(row.get("id", idx))
-                return (
-                    int(idx),
-                    i,
-                    display,
-                    row["answer_a"],
-                    row["answer_b"],
-                    s["voting_in_progress"].format(
-                        id=prompt_id,
-                        country=country_display(row.get("country")),
-                    ),
-                )
+            if row[f"answer_chosen_{i}"]["username"]:
+                continue
+            if is_slot_reserved_by_other(int(idx), i, user, "vote"):
+                continue
+            if not reserve_slot(int(idx), i, user, "vote"):
+                continue
+            display = _merged_prompt_display(
+                lang,
+                row.get("system_prompt", ""),
+                row["prompt"],
+            )
+            prompt_id = int(row.get("id", idx))
+            return (
+                int(idx),
+                i,
+                display,
+                row["answer_a"],
+                row["answer_b"],
+                s["voting_in_progress"].format(
+                    id=prompt_id,
+                    country=country_display(row.get("country")),
+                ),
+            )
     return -1, -1, "", "", "", s["voting_no_more"]
 
 
@@ -700,25 +773,59 @@ def save_vote(
     lang: str,
     profile: gr.OAuthProfile | None,
 ):
-    """Persist the vote and return the next prompt to vote on."""
+    """Persist the vote under CAS and return the next prompt to vote on.
+
+    Smart slot retry mirrors ``save_validation``: if the picker's slot was
+    just claimed, fall back to any remaining empty slot for the same prompt
+    before giving up."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
     if idx is None or idx < 0 or slot not in (1, 2, 3) or choice not in VOTE_CHOICES:
         return -1, -1, "", "", "", s["load_first"]
-    df = load_prompts_df()
-    if idx >= len(df):
-        return -1, -1, "", "", "", s["out_of_range"]
-    df.at[idx, f"answer_chosen_{slot}"] = {
-        "choice": choice,
-        "username": profile.username,
-    }
-    prompt_id = int(df.at[idx, "id"]) if "id" in df.columns else int(idx)
-    push_prompts_df(
-        df,
-        commit_message=f"{profile.username} voted prompt with ID {prompt_id}",
+
+    user = profile.username
+    # Re-voting on the same row from a stale tab silently swallows like the
+    # validation tab does — don't error, just advance.
+    already_voted = [False]
+
+    def mutator(df: pd.DataFrame):
+        if idx >= len(df):
+            return None
+        for i in (1, 2, 3):
+            if df.at[idx, f"answer_chosen_{i}"]["username"] == user:
+                already_voted[0] = True
+                return None
+        for try_slot in (slot, *(o for o in (1, 2, 3) if o != slot)):
+            if not df.at[idx, f"answer_chosen_{try_slot}"]["username"]:
+                df.at[idx, f"answer_chosen_{try_slot}"] = {
+                    "choice": choice,
+                    "username": user,
+                }
+                return df
+        return None
+
+    status, attempts = commit_prompts_with_cas(
+        mutator,
+        commit_message=lambda df: (
+            f"{user} voted prompt with ID "
+            f"{int(df.at[idx, 'id']) if 'id' in df.columns else int(idx)}"
+        ),
     )
-    return fetch_next_voting(lang, profile)
+    release_slot(idx, slot, user, "vote")
+    if attempts > 0:
+        log.info("save_vote took %d retries (status=%s)", attempts, status)
+
+    # Always advance, but surface the failure mode in the status line of
+    # the next picker result so the user knows their click didn't go through.
+    next_idx, next_slot, next_prompt, next_a, next_b, next_status = (
+        fetch_next_voting(lang, profile)
+    )
+    if status is False and not already_voted[0]:
+        next_status = s["voting_slot_taken"]
+    elif status is None:
+        next_status = s["voting_conflict_retry"]
+    return next_idx, next_slot, next_prompt, next_a, next_b, next_status
 
 
 def _vote_handler(choice: str):

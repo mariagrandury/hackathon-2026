@@ -16,7 +16,12 @@
       "Bash(python3 -m unittest tests.test_integration -v)",
       "Bash(python3 -m unittest tests.test_record_test_attempt -v)",
       "Bash(python3 -m unittest tests.test_test_tab -v)",
-      "Bash(python3 -m unittest discover tests)"
+      "Bash(python3 -m unittest discover tests)",
+      "Bash(python -c \"import data; print\\('ok'\\)\")",
+      "Bash(python -c \"import app; print\\('app imports ok'\\)\")",
+      "Bash(python -m tests.test_integration)",
+      "Bash(python -m unittest discover tests)",
+      "Bash(python -c \"import data; import app; print\\('all imports clean'\\)\")"
     ]
   }
 }
