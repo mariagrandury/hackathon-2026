@@ -129,7 +129,7 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Leaderboard",
         "guidelines_missing": "Guidelines for this language are not available yet.",
         # Test
-        "test_intro": "Answer all questions, then click **Submit test**. You need **{needed} / {max}** points to unlock the rest of the app. Classification questions award **+1** for the exact category, **+0.5** if you got the Reject/Accept side right but the bucket wrong, and **−0.5** if you got the side wrong. Multiple-choice questions award **+1** correct / **−1** wrong. Unanswered questions count as 0. Unlimited retries — if you fail, reread the guidelines and try again.",
+        "test_intro": "Answer all questions, then click **Submit test**. You need **{needed} / {max}** points to unlock the rest of the app. Classification questions award **+1** for the exact category, **+0.5** if you got the Reject/Accept side right but the bucket wrong, and **−0.5** if you got the side wrong. Multiple-choice questions award **+1** correct / **−1** wrong. Unlimited retries — if you fail, reread the guidelines and try again.",
         "test_login_required": "Please log in with Hugging Face to take the test.",
         "test_not_participant": "User `{username}` is not registered as a hackathon participant. Ask the organisers to add you before taking the test.",
         "test_no_questions": "No test is available for this language yet.",
@@ -172,7 +172,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_knowledge": "Cultural knowledge",
         "validation_choice_preference": "Cultural preference / norm",
         "validation_choice_dynamics": "Cultural dynamics / interaction",
-        "validation_choice_bias_probe": "Bias probe: neutral prompt that surfaces stereotypes",
+        "validation_choice_bias_probe": "Bias probe",
         "validation_choice_required": "Select one option (reject or accept) before saving.",
         "validation_load_button": "Load next prompt",
         "validation_save_button": "Save validation",
@@ -231,7 +231,7 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Ranking",
         "guidelines_missing": "La guía en este idioma todavía no están disponibles.",
         # Test
-        "test_intro": "Responde a todas las preguntas y haz clic en **Enviar test**. Necesitas **{needed} / {max}** puntos para desbloquear el resto de la aplicación. Las preguntas de clasificación dan **+1** si aciertas la categoría exacta, **+0.5** si aciertas el lado (Rechazar/Aceptar) pero no la categoría, y **−0.5** si te equivocas de lado. Las preguntas de opción múltiple dan **+1** si aciertas / **−1** si fallas. Las no respondidas valen 0. Puedes reintentarlo cuantas veces quieras — si suspendes, relee la guía y vuelve a intentarlo.",
+        "test_intro": "Responde a todas las preguntas y haz clic en **Enviar test**. Necesitas **{needed} / {max}** puntos para desbloquear el resto de la aplicación. Las preguntas de clasificación dan **+1** si aciertas la categoría exacta, **+0.5** si aciertas el lado (Rechazar/Aceptar) pero no la categoría, y **−0.5** si te equivocas de lado. Las preguntas de opción múltiple dan **+1** si aciertas / **−1** si fallas. Puedes reintentarlo cuantas veces quieras — si suspendes, relee la guía y vuelve a intentarlo.",
         "test_login_required": "Por favor, inicia sesión con Hugging Face para hacer el test.",
         "test_not_participant": "El usuario `{username}` no está registrado como participante del hackathon. Pide a los organizadores que te añadan antes de hacer el test.",
         "test_no_questions": "Todavía no hay un test disponible en este idioma.",
@@ -270,7 +270,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_knowledge": "Conocimiento cultural",
         "validation_choice_preference": "Preferencia o norma cultural",
         "validation_choice_dynamics": "Dinámica cultural / interacción",
-        "validation_choice_bias_probe": "Trampa de sesgo: prompt neutral que detecta estereotipos",
+        "validation_choice_bias_probe": "Trampa de sesgo",
         "validation_choice_required": "Selecciona una opción (rechazar o aceptar) antes de guardar.",
         "validation_load_button": "Cargar siguiente prompt",
         "validation_save_button": "Guardar validación",
@@ -329,7 +329,7 @@ T: dict[str, dict[str, str]] = {
         "tab_leaderboard": "Classificação",
         "guidelines_missing": "As diretrizes neste idioma ainda não estão disponíveis.",
         # Test
-        "test_intro": "Responda todas as perguntas e clique em **Enviar teste**. Você precisa de **{needed} / {max}** pontos para desbloquear o resto da aplicação. As perguntas de classificação dão **+1** se você acertar a categoria exata, **+0.5** se acertar o lado (Rejeitar/Aceitar) mas não a categoria, e **−0.5** se errar o lado. As de múltipla escolha dão **+1** correto / **−1** errado. As não respondidas valem 0. Tentativas ilimitadas — se reprovar, releia as diretrizes e tente novamente.",
+        "test_intro": "Responda todas as perguntas e clique em **Enviar teste**. Você precisa de **{needed} / {max}** pontos para desbloquear o resto da aplicação. As perguntas de classificação dão **+1** se você acertar a categoria exata, **+0.5** se acertar o lado (Rejeitar/Aceitar) mas não a categoria, e **−0.5** se errar o lado. As de múltipla escolha dão **+1** correto / **−1** errado. Tentativas ilimitadas — se reprovar, releia as diretrizes e tente novamente.",
         "test_login_required": "Por favor, entre com o Hugging Face para fazer o teste.",
         "test_not_participant": "O usuário `{username}` não está registrado como participante do hackathon. Peça aos organizadores para adicioná-lo antes de fazer o teste.",
         "test_no_questions": "Ainda não há um teste disponível neste idioma.",
@@ -368,7 +368,7 @@ T: dict[str, dict[str, str]] = {
         "validation_choice_knowledge": "Conhecimento cultural",
         "validation_choice_preference": "Preferência ou norma cultural",
         "validation_choice_dynamics": "Dinâmica cultural / interação",
-        "validation_choice_bias_probe": "Armadilha de viés: prompt neutro que detecta estereótipos",
+        "validation_choice_bias_probe": "Armadilha de viés",
         "validation_choice_required": "Selecione uma opção (rejeitar ou aceitar) antes de salvar.",
         "validation_load_button": "Carregar próximo prompt",
         "validation_save_button": "Salvar validação",
@@ -511,9 +511,7 @@ def save_prompt(
     # picks up the *new* max — otherwise two concurrent appenders both think
     # they're id=N+1 and the loser would commit with a stale id.
     def mutator(df: pd.DataFrame) -> pd.DataFrame:
-        next_id = (
-            int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
-        )
+        next_id = int(df["id"].max()) + 1 if "id" in df.columns and len(df) > 0 else 1
         new_row = {
             "id": next_id,
             "username": profile.username,
@@ -592,10 +590,7 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
             continue
         if row["username"] == user:
             continue
-        if any(
-            row[f"prompt_validation_{i}"]["username"] == user
-            for i in (1, 2, 3)
-        ):
+        if any(row[f"prompt_validation_{i}"]["username"] == user for i in (1, 2, 3)):
             continue
         for i in (1, 2, 3):
             if row[f"prompt_validation_{i}"]["username"]:
@@ -762,9 +757,7 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
             continue
         if not is_fully_validated(row) or not has_answers(row):
             continue
-        if any(
-            row[f"answer_chosen_{i}"]["username"] == user for i in (1, 2, 3)
-        ):
+        if any(row[f"answer_chosen_{i}"]["username"] == user for i in (1, 2, 3)):
             continue
         for i in (1, 2, 3):
             if row[f"answer_chosen_{i}"]["username"]:
@@ -850,8 +843,8 @@ def save_vote(
 
     # Always advance, but surface the failure mode in the status line of
     # the next picker result so the user knows their click didn't go through.
-    next_idx, next_slot, next_prompt, next_a, next_b, next_status = (
-        fetch_next_voting(lang, profile)
+    next_idx, next_slot, next_prompt, next_a, next_b, next_status = fetch_next_voting(
+        lang, profile
     )
     if status is False and not already_voted[0]:
         next_status = s["voting_slot_taken"]
@@ -1069,8 +1062,13 @@ def load_test(
                 gr.update(value=s["test_already_passed"], visible=True),
                 gr.update(visible=False),
                 gr.update(visible=False),
-                *classif_hidden, *classif_empty, *classif_empty, *classif_empty,
-                *mcq_hidden, *mcq_empty, *mcq_empty,
+                *classif_hidden,
+                *classif_empty,
+                *classif_empty,
+                *classif_empty,
+                *mcq_hidden,
+                *mcq_empty,
+                *mcq_empty,
             )
 
     questions = _shuffle_questions(lang)
@@ -1084,8 +1082,13 @@ def load_test(
             gr.update(value=status),
             gr.update(visible=False),
             gr.update(visible=False),
-            *classif_hidden, *classif_empty, *classif_empty, *classif_empty,
-            *mcq_hidden, *mcq_empty, *mcq_empty,
+            *classif_hidden,
+            *classif_empty,
+            *classif_empty,
+            *classif_empty,
+            *mcq_hidden,
+            *mcq_empty,
+            *mcq_empty,
         )
     status_lines = []
     if profile is not None:
@@ -1114,8 +1117,13 @@ def load_test(
         gr.update(value=status),
         gr.update(visible=True),
         gr.update(visible=False),
-        *c_blocks, *c_mds, *c_rejects, *c_accepts,
-        *m_blocks, *m_mds, *m_radios,
+        *c_blocks,
+        *c_mds,
+        *c_rejects,
+        *c_accepts,
+        *m_blocks,
+        *m_mds,
+        *m_radios,
     )
 
 

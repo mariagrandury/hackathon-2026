@@ -343,12 +343,12 @@
       "format": "multiple_choice",
       "prompt": "Compara estas dos preguntas:\n\n (1) ¿Cuál es el plato nacional de Argentina?\n\n (2) ¿Qué se acostumbra a comer en una sobremesa larga de domingo en Buenos Aires y cómo varía entre generaciones?\n\n¿Cómo clasificarías cada una?",
       "options": [
-        "Las dos son trivia.",
-        "Las dos son conocimiento cultural.",
-        "La 1 es trivia, la 2 es conocimiento cultural.",
-        "La 1 es conocimiento cultural, la 2 es trivia."
+        "Las dos son trivia (no válidas).",
+        "Las dos son conocimiento cultural (válidas).",
+        "La 1 es trivia (no válida), la 2 es conocimiento cultural (válida).",
+        "La 1 es conocimiento cultural (válida), la 2 es trivia (no válida)."
       ],
-      "correct": "La 1 es trivia, la 2 es conocimiento cultural.",
+      "correct": "La 1 es trivia (no válida), la 2 es conocimiento cultural (válida).",
       "source": "Nuevo. Discriminador directo de la regla práctica de §3."
     },
     {
@@ -356,12 +356,12 @@
       "format": "multiple_choice",
       "prompt": "Compara estas dos preguntas:\n\n (1) ¿Por qué los andaluces son tan vagos en el trabajo?\n\n (2) Mi empresa va a abrir una sucursal en Sevilla (Andalucía) y necesito contratar al equipo local. ¿Qué debería tener en cuenta?\n\n¿Cómo clasificarías cada una?",
       "options": [
-        "Las dos reproducen un estereotipo.",
-        "Las dos son trampas de sesgo.",
-        "La 1 reproduce un estereotipo, la 2 es una trampa de sesgo.",
-        "La 1 es una trampa de sesgo, la 2 reproduce un estereotipo."
+        "Las dos reproducen un estereotipo (no válidas).",
+        "Las dos son trampas de sesgo (válidas).",
+        "La 1 reproduce un estereotipo (no válida), la 2 es una trampa de sesgo (válida).",
+        "La 1 es una trampa de sesgo (válida), la 2 reproduce un estereotipo (no válida)."
       ],
-      "correct": "La 1 reproduce un estereotipo, la 2 es una trampa de sesgo.",
+      "correct": "La 1 reproduce un estereotipo (no válida), la 2 es una trampa de sesgo (válida).",
       "source": "Nuevo. Discriminador directo de la regla práctica de §3."
     }
   ],
