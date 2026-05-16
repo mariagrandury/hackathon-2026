@@ -72,7 +72,7 @@ class CommitConflictError(Exception):
 # Local to this process — on a multi-replica deployment this would need to
 # move to Redis or similar. HF Spaces are single-process by default, so it's
 # fine here.
-_RESERVATION_TTL_SECONDS = 120.0
+_RESERVATION_TTL_SECONDS = 300.0
 _reservations_lock = threading.Lock()
 # Key is ``(row_idx, slot, kind)`` where kind is ``"validation"`` or
 # ``"vote"``; value is ``(username, expiry_monotonic)``.
@@ -141,6 +141,7 @@ def _cache_put(key: str, sha: Optional[str], df: pd.DataFrame) -> None:
 def _cache_invalidate(key: str) -> None:
     with _cache_lock:
         _cache.pop(key, None)
+
 
 EMPTY_VALIDATION = {"choice": "", "username": ""}
 EMPTY_VOTE = {"choice": "", "username": ""}
@@ -378,9 +379,7 @@ def _single_parquet_path(api: HfApi, repo_id: str) -> str:
     for a small table; we replace that same path on CAS updates so we don't
     leave orphan shards behind. Raises if the dataset has grown past a
     single shard — at that point this helper needs a real shard strategy."""
-    files = api.list_repo_files(
-        repo_id=repo_id, repo_type="dataset", token=HF_TOKEN
-    )
+    files = api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=HF_TOKEN)
     parquets = [f for f in files if f.endswith(".parquet")]
     if len(parquets) != 1:
         raise RuntimeError(
@@ -716,8 +715,7 @@ def ranking_df(df: pd.DataFrame) -> pd.DataFrame:
     validated = _validator_usernames(df).value_counts()
     voted = _voter_usernames(df).value_counts()
     users = sorted(
-        (set(sent.index) | set(validated.index) | set(voted.index))
-        - EXCLUDED_USERNAMES
+        (set(sent.index) | set(validated.index) | set(voted.index)) - EXCLUDED_USERNAMES
     )
     out = pd.DataFrame(
         {

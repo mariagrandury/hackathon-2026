@@ -74,6 +74,14 @@ DEFAULT_LANG = "en"
 GUIDELINES_DIR = "guidelines"
 IMAGES_DIR = "images"
 
+# How many slots the validation / voting pickers pre-reserve on each
+# "Load next prompt" click. The UI shows one prompt at a time; the
+# remaining ``PICKER_BATCH_SIZE - 1`` slots are held with a 120 s TTL so
+# concurrent users walk past them and the picker can keep handing this
+# user fresh work without CAS conflicts. Capped at one slot per row so a
+# single user can't reserve all 3 validation slots of the same prompt.
+PICKER_BATCH_SIZE = 10
+
 # Gradio's radio options container (`.wrap`) defaults to `flex-direction: row`,
 # so buckets flow side-by-side. Force one bucket per line in each of the two
 # validation columns (Reject | Accept). Also style the entry-test questions:
@@ -554,8 +562,13 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
 
     Filters to the user's own country (only prompts grounded in their
     culture are shown). Users with no registered country fall through and
-    see all prompts. Reserves the returned ``(idx, slot)`` so a concurrent
-    picker walks past it instead of bouncing through the CAS retry loop."""
+    see all prompts.
+
+    Reserves up to ``PICKER_BATCH_SIZE`` slots in one walk: returns the
+    first to the UI and holds the rest with a 120 s TTL so other users
+    skip them. Subsequent ``Load next`` clicks naturally re-pick from this
+    user's batch (own reservations register as "not reserved by other"),
+    so concurrent annotators don't collide on the same rows."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", s["login_required"]
@@ -569,7 +582,11 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
     # seeing the same neighbouring prompts.
     indices = list(df.index)
     random.shuffle(indices)
+    first_pick: tuple[int, int, str, str] | None = None
+    reserved_count = 0
     for idx in indices:
+        if reserved_count >= PICKER_BATCH_SIZE:
+            break
         row = df.loc[idx]
         if user_country and row.get("country") != user_country:
             continue
@@ -587,22 +604,27 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
                 continue
             if not reserve_slot(int(idx), i, user, "validation"):
                 continue
-            display = _merged_prompt_display(
-                lang,
-                row.get("system_prompt", ""),
-                row["prompt"],
-            )
-            prompt_id = int(row.get("id", idx))
-            return (
-                int(idx),
-                i,
-                display,
-                s["validation_in_progress"].format(
-                    id=prompt_id,
-                    country=country_display(row.get("country")),
-                ),
-            )
-    return -1, -1, "", s["validation_no_more"]
+            if first_pick is None:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
+                prompt_id = int(row.get("id", idx))
+                first_pick = (
+                    int(idx),
+                    i,
+                    display,
+                    s["validation_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
+                )
+            reserved_count += 1
+            break  # at most one slot per row in the batch
+    if first_pick is None:
+        return -1, -1, "", s["validation_no_more"]
+    return first_pick
 
 
 def save_validation(
@@ -717,8 +739,9 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
 
     Users *can* vote on their own prompts (unlike validation). Filters to
     the user's own country — voters only judge cultural appropriateness of
-    answers grounded in their own culture. Reserves the returned slot so
-    concurrent voters bypass it instead of bouncing through CAS retries."""
+    answers grounded in their own culture. Reserves up to
+    ``PICKER_BATCH_SIZE`` slots per click; see ``fetch_next_validation``
+    for the batching rationale."""
     s = _t(lang)
     if profile is None:
         return -1, -1, "", "", "", s["login_required"]
@@ -729,7 +752,11 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
     # Randomize iteration order — see note on fetch_next_validation.
     indices = list(df.index)
     random.shuffle(indices)
+    first_pick: tuple[int, int, str, str, str, str] | None = None
+    reserved_count = 0
     for idx in indices:
+        if reserved_count >= PICKER_BATCH_SIZE:
+            break
         row = df.loc[idx]
         if user_country and row.get("country") != user_country:
             continue
@@ -746,24 +773,29 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
                 continue
             if not reserve_slot(int(idx), i, user, "vote"):
                 continue
-            display = _merged_prompt_display(
-                lang,
-                row.get("system_prompt", ""),
-                row["prompt"],
-            )
-            prompt_id = int(row.get("id", idx))
-            return (
-                int(idx),
-                i,
-                display,
-                row["answer_a"],
-                row["answer_b"],
-                s["voting_in_progress"].format(
-                    id=prompt_id,
-                    country=country_display(row.get("country")),
-                ),
-            )
-    return -1, -1, "", "", "", s["voting_no_more"]
+            if first_pick is None:
+                display = _merged_prompt_display(
+                    lang,
+                    row.get("system_prompt", ""),
+                    row["prompt"],
+                )
+                prompt_id = int(row.get("id", idx))
+                first_pick = (
+                    int(idx),
+                    i,
+                    display,
+                    row["answer_a"],
+                    row["answer_b"],
+                    s["voting_in_progress"].format(
+                        id=prompt_id,
+                        country=country_display(row.get("country")),
+                    ),
+                )
+            reserved_count += 1
+            break  # at most one slot per row in the batch
+    if first_pick is None:
+        return -1, -1, "", "", "", s["voting_no_more"]
+    return first_pick
 
 
 def save_vote(

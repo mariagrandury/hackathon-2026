@@ -255,13 +255,18 @@ inside the Space because `hf_oauth: true` is set.
   (single replica by default), but it'd need to be lifted out (Redis,
   etc.) on a multi-replica deployment.
 - **Slot reservations are per-process, in-memory, 120 s TTL.** The
-  validation and voting pickers call `reserve_slot(idx, slot, user, kind)`
-  before handing a slot to the UI; concurrent pickers see the reservation
-  via `is_slot_reserved_by_other` and walk past, avoiding a CAS conflict.
-  Saves call `release_slot` regardless of outcome. A user who navigates
-  away without saving releases the slot when the TTL expires. Like the
-  read cache, the reservation table is process-local — same multi-replica
-  caveat applies.
+  validation and voting pickers reserve up to `PICKER_BATCH_SIZE = 10`
+  slots per "Load next" click — they return the first to the UI and hold
+  the rest. Concurrent pickers see the reservations via
+  `is_slot_reserved_by_other` and walk past, avoiding CAS conflicts.
+  At most one slot per row is included in a batch so a single user
+  can't monopolize all three validation slots of the same prompt. Save
+  handlers call `release_slot` on the just-acted slot; the rest of the
+  batch stays reserved (refreshed on each subsequent "Load next" hit, so
+  an actively-working annotator keeps their queue indefinitely). A user
+  who navigates away with reservations held releases them when the TTL
+  expires. Like the read cache, the reservation table is process-local —
+  same multi-replica caveat applies.
 - **`verification_mode="no_checks"` on dataset reads.** CAS commits rewrite
   the parquet shard but never `README.md`, so the dataset card's
   `num_examples` goes stale after the first save and the default
