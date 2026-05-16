@@ -8,7 +8,15 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:7860/)",
       "Bash(python -c \"import app; demo = app.build_demo\\(\\); print\\('OK'\\)\")",
       "Read(//opt/homebrew/lib/python3.11/site-packages/gradio/layouts/**)",
-      "Bash(tee /tmp/gradio.log)"
+      "Bash(tee /tmp/gradio.log)",
+      "Bash(python3 -m unittest tests.test_app_helpers -v)",
+      "Bash(python3 -m unittest tests.test_data_helpers -v)",
+      "Bash(python3 -m unittest tests.test_grading -v)",
+      "Bash(python3 -m unittest tests.test_importer -v)",
+      "Bash(python3 -m unittest tests.test_integration -v)",
+      "Bash(python3 -m unittest tests.test_record_test_attempt -v)",
+      "Bash(python3 -m unittest tests.test_test_tab -v)",
+      "Bash(python3 -m unittest discover tests)"
     ]
   }
 }

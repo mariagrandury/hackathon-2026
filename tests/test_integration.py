@@ -5,17 +5,32 @@ dataset (so "fake sending prompts, saving, fetching" never touches HF),
 reports per-call wall-clock latency, and asserts the invariants you'd
 expect (the saved row actually shows up in the next fetch, the picker
 skips your own prompts, voting blocks until 3 ``relevant`` validations,
-etc.). Run with::
+etc.). Run from the repo root::
 
-    python test_integration.py
+    python -m tests.test_integration   # recommended
+    python tests/test_integration.py   # also works (sys.path tweak below)
+
+It is also imported (but its bare ``test_X()`` functions are NOT collected,
+because they're not ``TestCase`` methods) when you ``python -m unittest
+discover tests`` — the module-level fake-installation runs, the assertions
+hold, and discover moves on.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
+from pathlib import Path
 from types import SimpleNamespace
+
+# Make the repo root importable when this file is run directly as
+# ``python tests/test_integration.py``: the script's own dir (tests/) is
+# on sys.path by default, but ``data`` / ``app`` live one level up.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -220,6 +235,15 @@ data.load_participants_df = fake_load_participants
 data.push_prompts_df = fake_push
 
 import app  # noqa: E402
+
+# Also rebind on the ``app`` module: if another tests file already imported
+# ``app`` (e.g. under ``python -m unittest discover``), the ``from data
+# import …`` line above already captured the real functions into ``app``'s
+# namespace. Patching only ``data`` wouldn't reach in. Doing both makes
+# the stubs work regardless of import order.
+app.load_prompts_df = fake_load_prompts
+app.load_participants_df = fake_load_participants
+app.push_prompts_df = fake_push
 
 # Verify the patches stuck.
 assert (

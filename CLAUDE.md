@@ -162,18 +162,37 @@ python app.py
 
 ## Tests
 
-`tests/test_grading.py` covers the entry-test grading: per-question scoring
-rules (classification partial-credit + MCQ ±1), `grade()` composition, and
-the bank-loader invariants. Plain stdlib `unittest`, no extra deps.
+> **Workflow rule.** After every implementation change — whether you're
+> editing a handler, a helper, a translation, the JSON bank, or the
+> threshold constants — run **both** the unit suite and the integration
+> script and make sure they're green before declaring the work done:
+>
+> ```bash
+> python -m unittest discover tests   # all unit tests (fast, ~0.1s)
+> python -m tests.test_integration    # end-to-end HF-stubbed (~0.7s)
+> ```
+>
+> If a test fails because the behaviour intentionally changed, update the
+> test (and document the why in the commit body) — don't skip it. New
+> features land with new tests covering them.
 
-```bash
-python -m unittest discover tests
-```
+Layout under `tests/` — all stdlib `unittest`, no extra deps:
 
-Synthetic banks (patched in via `unittest.mock.patch.multiple`) keep the
-scoring tests independent of `data/test-2026.json`'s current contents; the
-`BankLoaders` section deliberately hits the real JSON to lock the
-`TEST_QUESTIONS_PER_CATEGORY` quota and entry/hidden disjointness.
+| File | What it covers |
+|------|----------------|
+| `test_grading.py` | `test_data.grade` per-question scoring (classification partial-credit + MCQ ±1), `grade()` composition, bank-loader invariants. |
+| `test_data_helpers.py` | `data.py` pure helpers: `parse_test_score`, `best_test_score`, `country_display`, `is_fully_validated`, `has_answers`, `_fully_validated_mask`, `user_stats`, `country_counts`, `ranking_df`, `all_known_usernames`. |
+| `test_app_helpers.py` | `app.py` utilities: `_fmt_score`, `_pass_raw`, `_test_max_possible`, `_t`, `_resolve_language`, `_default_system_prompt`, `_merged_prompt_display`, `_clear_other_radio`, `show_user`, `_read_guidelines`, `_validation_reject/_accept_choices`. |
+| `test_importer.py` | `import_participants_info`: `clean_username` (URL extraction, blacklist, non-answers), `map_country` (pattern matching, first-comma-component bias), `_order_by_lang` (ES > PT > EN ordering). |
+| `test_test_tab.py` | Entry-test flow integration: `load_test` shape + already-passed shortcut, `submit_test` perfect / failed / unanswered / not-participant branches with `record_test_attempt` mocked out. |
+| `test_record_test_attempt.py` | Commit-style update path with `HfApi` mocked: happy path with `parent_commit`, attempt-number increment, `LookupError`, retry on 412, non-412 propagates, `RuntimeError` after `_COMMIT_MAX_RETRIES`. |
+| `test_integration.py` | End-to-end script with the HF I/O layer stubbed. Drives every user-facing handler, reports per-call latency, asserts the saved row shows up in the next fetch, the picker skips own prompts / already-validated rows, voting unlocks after 3 accept validations, country filter holds, commit messages carry the right action + ID. Run as a script (the bare `test_X()` functions are not discovered by `unittest`). |
+
+Synthetic test fixtures (patched in via `unittest.mock`) keep the unit
+suites independent of `data/test-2026.json`'s current contents and of the
+Hub; the small `BankLoaders` section in `test_grading.py` and a couple of
+`_test_max_possible` checks in `test_app_helpers.py` deliberately hit the
+real JSON to lock the `TEST_QUESTIONS_PER_CATEGORY` quota.
 
 Locally, Gradio's `LoginButton` mocks the OAuth flow with whatever HF account
 your CLI / `HF_TOKEN` is logged in as, so `Save prompt` only succeeds if your
