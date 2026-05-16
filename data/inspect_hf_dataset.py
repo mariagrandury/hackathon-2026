@@ -25,7 +25,15 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import sys
 from pathlib import Path
+
+# Repo root is one level up (this script lives in ``data/``). Add it to
+# sys.path so ``import data`` resolves to the data.py module, not this
+# directory.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import matplotlib
 
@@ -43,7 +51,7 @@ from data import (
     ranking_df,
 )
 
-REPO_DIR = Path(__file__).resolve().parent
+REPO_DIR = _REPO_ROOT
 OUT_DIR = REPO_DIR / "data"
 
 # Mirror the app's Leaderboard palette (app._user_progress_color_map /
