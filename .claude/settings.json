@@ -21,7 +21,8 @@
       "Bash(python -c \"import app; print\\('app imports ok'\\)\")",
       "Bash(python -m tests.test_integration)",
       "Bash(python -m unittest discover tests)",
-      "Bash(python -c \"import data; import app; print\\('all imports clean'\\)\")"
+      "Bash(python -c \"import data; import app; print\\('all imports clean'\\)\")",
+      "Bash(python -m tests.bench_compare)"
     ]
   }
 }
