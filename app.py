@@ -68,9 +68,16 @@ IMAGES_DIR = "images"
 
 # Gradio's radio options container (`.wrap`) defaults to `flex-direction: row`,
 # so buckets flow side-by-side. Force one bucket per line in each of the two
-# validation columns (Reject | Accept).
+# validation columns (Reject | Accept). Also style the entry-test questions:
+# bigger / less-gray header so the prompt dominates the radios visually, and
+# slightly smaller bucket-option labels so the buttons don't overpower the
+# question text.
 APP_CSS = (
     ".validation-choices .wrap { flex-direction: column; align-items: flex-start; }"
+    " .test-question p { font-size: 1.05rem; line-height: 1.5;"
+    " font-weight: 500; color: var(--body-text-color);"
+    " margin: 0.75rem 0 0.5rem; }"
+    " .test-choices .wrap label { font-size: 0.875rem; }"
 )
 
 # Fixed-size pool of radio components for the test tab. The tab populates
@@ -729,16 +736,6 @@ def _test_threshold_pct() -> int:
     return int(round(TEST_PASS_THRESHOLD * 100))
 
 
-def _test_radio_choices(lang: str) -> list[tuple[str, str]]:
-    """All 7 validation buckets as `(label, value)` pairs for the entry test.
-
-    The test asks the user to classify a prompt into the same buckets as
-    the validation tab, but it's a single radio (no Reject/Accept split),
-    so we list all seven options together."""
-    s = _t(lang)
-    return [(s[f"validation_choice_{c}"], c) for c in VALIDATION_CHOICES]
-
-
 def _shuffle_questions(lang: str) -> list[dict]:
     """Return a shuffled copy of the language's question bank."""
     questions = list(load_test_questions(lang))
@@ -746,33 +743,51 @@ def _shuffle_questions(lang: str) -> list[dict]:
     return questions
 
 
-def _test_radio_updates(
+def _test_question_updates(
     questions: list[dict],
     lang: str,
     reset_values: bool,
-) -> list:
-    """Build ``MAX_TEST_QUESTIONS`` update dicts: visible+populated for the
-    questions in ``questions``, hidden for the rest. ``reset_values=True``
-    clears any previously selected answer (used on (re-)load); ``False``
-    leaves the chosen value alone (used after submit so the user can see
-    what they picked while reading the result)."""
+) -> tuple[list, list, list, list]:
+    """Build four ``MAX_TEST_QUESTIONS``-long lists of updates, one per
+    output type, in the order the test tab and ``load_test`` flatten them:
+        - wrapping ``Column`` visibility
+        - question Markdown
+        - Reject radio
+        - Accept radio
+    Slots beyond ``len(questions)`` are hidden / no-op'd.
+
+    ``reset_values=True`` clears any previously selected answer (used on
+    (re-)load); ``False`` leaves the chosen value alone."""
     s = _t(lang)
-    choices = _test_radio_choices(lang)
-    updates = []
+    reject_choices = _validation_reject_choices(lang)
+    accept_choices = _validation_accept_choices(lang)
+    blocks, mds, rejects, accepts = [], [], [], []
     for i in range(MAX_TEST_QUESTIONS):
         if i < len(questions):
             q = questions[i]
-            update = dict(
-                visible=True,
-                choices=choices,
-                label=s["test_question_label"].format(n=i + 1, prompt=q["prompt"]),
+            blocks.append(gr.update(visible=True))
+            mds.append(
+                gr.update(
+                    value=s["test_question_label"].format(n=i + 1, prompt=q["prompt"])
+                )
+            )
+            reject_update = dict(
+                choices=reject_choices, label=s["validation_group_reject"]
+            )
+            accept_update = dict(
+                choices=accept_choices, label=s["validation_group_accept"]
             )
             if reset_values:
-                update["value"] = None
-            updates.append(gr.update(**update))
+                reject_update["value"] = None
+                accept_update["value"] = None
+            rejects.append(gr.update(**reject_update))
+            accepts.append(gr.update(**accept_update))
         else:
-            updates.append(gr.update(visible=False))
-    return updates
+            blocks.append(gr.update(visible=False))
+            mds.append(gr.update())
+            rejects.append(gr.update())
+            accepts.append(gr.update())
+    return blocks, mds, rejects, accepts
 
 
 def load_test(
@@ -787,21 +802,39 @@ def load_test(
     for the best-score lookup. The retake button doesn't have access to it
     and falls back to a fresh load.
 
-    Outputs (in order): ``questions_state``, ``intro_md``, ``status_md``,
-    ``submit_btn``, ``retake_btn``, then ``MAX_TEST_QUESTIONS`` radios.
+    Outputs (in order):
+        - ``questions_state``
+        - ``intro_md``
+        - ``status_md``
+        - ``submit_btn``
+        - ``retake_btn``
+        - four ``MAX_TEST_QUESTIONS``-long blocks of updates flattened in this order:
+            - wrapping ``Column`` visibility
+            - question Markdown
+            - Reject radio
+            - Accept radio
+
+    The flattened order here must match the outputs= list in ``build_demo``
+    for ``demo.load`` and ``retake_btn.click``.
     """
     s = _t(lang)
     questions = _shuffle_questions(lang)
     intro = s["test_intro"].format(threshold=_test_threshold_pct())
     if not questions:
         status = s["test_no_questions"]
+        # Hide everything: blocks invisible, mds/radios left as no-ops.
+        empty = [gr.update() for _ in range(MAX_TEST_QUESTIONS)]
+        blocks = [gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)]
         return (
             [],
             gr.update(value=intro),
             gr.update(value=status),
             gr.update(visible=False),
             gr.update(visible=False),
-            *(gr.update(visible=False) for _ in range(MAX_TEST_QUESTIONS)),
+            *blocks,
+            *empty,
+            *empty,
+            *empty,
         )
     status_lines = []
     if profile is not None:
@@ -811,13 +844,19 @@ def load_test(
                 s["test_status_best"].format(percent=int(round(best * 100)))
             )
     status = "\n\n".join(status_lines)
+    blocks, mds, rejects, accepts = _test_question_updates(
+        questions, lang, reset_values=True
+    )
     return (
         questions,
         gr.update(value=intro),
         gr.update(value=status),
         gr.update(visible=True),
         gr.update(visible=False),
-        *_test_radio_updates(questions, lang, reset_values=True),
+        *blocks,
+        *mds,
+        *rejects,
+        *accepts,
     )
 
 
@@ -828,6 +867,12 @@ def submit_test(
     *answers,
 ):
     """Grade the submitted answers, persist the score, and return UI updates.
+
+    ``answers`` is the concatenation of two ``MAX_TEST_QUESTIONS``-long
+    sequences: all reject-radio values, then all accept-radio values.
+    Mutual exclusion (``_clear_other_radio``) guarantees at most one of
+    each pair holds a value; we coalesce them into one chosen bucket per
+    question. Unanswered = both radios at ``None``.
 
     Outputs (in order): ``status_md``, ``submit_btn``, ``retake_btn``,
     ``tab_writing``, ``tab_validation``, ``tab_voting``.
@@ -849,9 +894,15 @@ def submit_test(
             gr.update(visible=False),
             *noop,
         )
-    # Walk in question order — answers come positionally from the radio
-    # pool, so the i-th answer belongs to the i-th question.
-    paired = [(q["id"], answers[i]) for i, q in enumerate(questions)]
+    # Split the flattened answer tuple back into the two radio pools, then
+    # collapse each (reject, accept) pair to whichever holds a value.
+    reject_answers = answers[:MAX_TEST_QUESTIONS]
+    accept_answers = answers[MAX_TEST_QUESTIONS : 2 * MAX_TEST_QUESTIONS]
+    paired = []
+    for i, q in enumerate(questions):
+        r = reject_answers[i]
+        a = accept_answers[i]
+        paired.append((q["id"], a if a is not None else r))
     if any(value is None for _, value in paired):
         return (
             gr.update(value=s["test_status_unanswered"]),
@@ -864,7 +915,9 @@ def submit_test(
         attempt = record_test_attempt(profile.username, score)
     except LookupError:
         return (
-            gr.update(value=s["test_not_participant"].format(username=profile.username)),
+            gr.update(
+                value=s["test_not_participant"].format(username=profile.username)
+            ),
             gr.update(visible=True),
             gr.update(visible=False),
             *noop,
@@ -894,27 +947,49 @@ def submit_test(
 
 def _build_test_tab(language: gr.State) -> dict:
     s = _t(DEFAULT_LANG)
-    intro_md = gr.Markdown(
-        s["test_intro"].format(threshold=_test_threshold_pct())
-    )
+    intro_md = gr.Markdown(s["test_intro"].format(threshold=_test_threshold_pct()))
     questions_state = gr.State([])
-    radios: list[gr.Radio] = []
+    # Each "question block" is a wrapping ``gr.Column`` that holds the
+    # question Markdown plus a Reject | Accept row of two radios, mirroring
+    # the validation tab. Visibility is toggled on the wrapping Column so a
+    # single ``visible=`` update hides/shows the whole question at once;
+    # ``load_test`` then fills in the Markdown and resets the radios.
+    blocks: list[gr.Column] = []
+    question_mds: list[gr.Markdown] = []
+    reject_radios: list[gr.Radio] = []
+    accept_radios: list[gr.Radio] = []
     for _ in range(MAX_TEST_QUESTIONS):
-        radios.append(
-            gr.Radio(
-                choices=_test_radio_choices(DEFAULT_LANG),
-                value=None,
-                visible=False,
-                interactive=True,
-            )
-        )
+        with gr.Column(visible=False) as block:
+            qmd = gr.Markdown(elem_classes=["test-question"])
+            with gr.Row():
+                with gr.Column():
+                    reject = gr.Radio(
+                        choices=_validation_reject_choices(DEFAULT_LANG),
+                        label=s["validation_group_reject"],
+                        value=None,
+                        elem_classes=["validation-choices", "test-choices"],
+                    )
+                with gr.Column():
+                    accept = gr.Radio(
+                        choices=_validation_accept_choices(DEFAULT_LANG),
+                        label=s["validation_group_accept"],
+                        value=None,
+                        elem_classes=["validation-choices", "test-choices"],
+                    )
+        blocks.append(block)
+        question_mds.append(qmd)
+        reject_radios.append(reject)
+        accept_radios.append(accept)
     submit_btn = gr.Button(s["test_submit_button"], variant="primary", visible=False)
     status_md = gr.Markdown()
     retake_btn = gr.Button(s["test_retake_button"], visible=False)
     return {
         "intro_md": intro_md,
         "questions_state": questions_state,
-        "radios": radios,
+        "blocks": blocks,
+        "question_mds": question_mds,
+        "reject_radios": reject_radios,
+        "accept_radios": accept_radios,
         "submit_btn": submit_btn,
         "status_md": status_md,
         "retake_btn": retake_btn,
@@ -1275,9 +1350,7 @@ def init_ui(profile: gr.OAuthProfile | None):
     # Country-aware placeholder for the system_prompt textbox — uses the
     # actual default that will be substituted in if the user clicks Save
     # without filling it in.
-    info = (
-        participant_info(profile.username, participants_df) if profile else None
-    )
+    info = participant_info(profile.username, participants_df) if profile else None
     default_sys = _default_system_prompt(lang, info.get("country") if info else None)
     sys_placeholder = default_sys or s["writing_system_placeholder"]
     # Gating: Writing / Validation / Voting only become available once the
@@ -1406,10 +1479,20 @@ def build_demo() -> gr.Blocks:
         )
 
         # Test handlers — Submit grades and toggles gated-tab visibility;
-        # Retake re-shuffles and resets the radios.
+        # Retake re-shuffles and resets the radios. The per-question
+        # ``.change`` wiring mirrors the validation tab: picking from one
+        # radio of a pair clears the other so only one bucket is selected.
+        for r, a in zip(test_tab["reject_radios"], test_tab["accept_radios"]):
+            r.change(_clear_other_radio, inputs=[r], outputs=[a])
+            a.change(_clear_other_radio, inputs=[a], outputs=[r])
         test_tab["submit_btn"].click(
             submit_test,
-            inputs=[test_tab["questions_state"], language, *test_tab["radios"]],
+            inputs=[
+                test_tab["questions_state"],
+                language,
+                *test_tab["reject_radios"],
+                *test_tab["accept_radios"],
+            ],
             outputs=[
                 test_tab["status_md"],
                 test_tab["submit_btn"],
@@ -1428,7 +1511,10 @@ def build_demo() -> gr.Blocks:
                 test_tab["status_md"],
                 test_tab["submit_btn"],
                 test_tab["retake_btn"],
-                *test_tab["radios"],
+                *test_tab["blocks"],
+                *test_tab["question_mds"],
+                *test_tab["reject_radios"],
+                *test_tab["accept_radios"],
             ],
         )
 
@@ -1452,7 +1538,10 @@ def build_demo() -> gr.Blocks:
                 test_tab["status_md"],
                 test_tab["submit_btn"],
                 test_tab["retake_btn"],
-                *test_tab["radios"],
+                *test_tab["blocks"],
+                *test_tab["question_mds"],
+                *test_tab["reject_radios"],
+                *test_tab["accept_radios"],
                 writing["system_box"],
                 writing["prompt_box"],
                 writing["save_btn"],

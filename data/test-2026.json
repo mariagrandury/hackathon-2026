@@ -36,7 +36,7 @@
     {
       "id": "Q5",
       "format": "classification",
-      "prompt": "Eres un asistente de IA. Lee el siguiente diálogo entre dos amigas y adáptalo al español de España.\n\nA1: ¿Y a ti, cómo te pinta la vida?\nA2: No puedo engañarte, manita, los apuros en mi cantón son eternos.\nA1: Yo andaba por aquí baboseando para comprar las piñatas, la fruta, la colación y las velas para hoy que es la última posada.\nA2: ¿Tú todavía haces posadas? Pos necesitas ser muy rica.",
+      "prompt": "Eres un asistente de IA. Lee el siguiente diálogo entre dos amigas y adáptalo al español de España.\n\n\nA1: ¿Y a ti, cómo te pinta la vida?\n\nA2: No puedo engañarte, manita, los apuros en mi cantón son eternos.\n\nA1: Yo andaba por aquí baboseando para comprar las piñatas, la fruta, la colación y las velas para hoy que es la última posada.\n\nA2: ¿Tú todavía haces posadas? Pos necesitas ser muy rica.",
       "correct": "Conocimiento cultural",
       "source": "2025-Q6 (85% acierto)"
     },
@@ -44,7 +44,7 @@
       "id": "CC-2",
       "format": "classification",
       "country": "Chile",
-      "prompt": "Eres una persona de Chile de clase media baja. Explica qué representa el mes de septiembre para los chilenos y cómo lo vive cada generación.",
+      "prompt": "Eres una persona de Chile de clase media baja.\n\nExplica qué representa el mes de septiembre para los chilenos y cómo lo vive cada generación.",
       "correct": "Conocimiento cultural",
       "why_accept": "Práctica cultural viva (Fiestas Patrias) con variación por región y clase. No es solo la fecha, es cómo se celebra."
     },
@@ -58,7 +58,7 @@
     {
       "id": "Q8",
       "format": "classification",
-      "prompt": "Eres una persona de 60 años de Lima, Perú. Es martes por la noche, son las 11 y tu vecino del piso de arriba pone música a un volumen alto. ¿Qué haces?",
+      "prompt": "Eres una persona de 60 años de Lima, Perú.\n\nEs martes por la noche, son las 11 y tu vecino del piso de arriba pone música a un volumen alto. ¿Qué haces?",
       "correct": "Preferencia / norma cultural",
       "source": "Nuevo. Cubre Preferencia con un rol detallado (edad + ciudad)."
     },
@@ -67,7 +67,7 @@
       "format": "classification",
       "country": "Argentina",
       "role_axes": ["género", "edad", "ciudad", "barrio", "profesión", "edad vital"],
-      "prompt": "Sos un hombre de 65 años de Buenos Aires, jubilado de la administración pública, vivís en Barrio Norte. Tu hijo te avisa que el domingo viene a almorzar con su nueva novia. Es la primera vez que la trae a casa. ¿Cómo te preparás?",
+      "prompt": "Sos un hombre de 65 años de Buenos Aires, jubilado de la administración pública, vivís en Barrio Norte.\n\nTu hijo te avisa que el domingo viene a almorzar con su nueva novia. Es la primera vez que la trae a casa. ¿Cómo te preparás?",
       "correct": "Preferencia / norma cultural",
       "why_preference": "Hay un ritual reconocible (asado dominical, parrilla, vino) pero las decisiones concretas (quién cocina, qué corte, si invitar a más familia, cómo recibir a la novia) varían por generación y clase. Una respuesta porteña suena distinta a una del conurbano o del interior."
     },
@@ -76,14 +76,14 @@
       "format": "classification",
       "country": "Uruguay",
       "role_axes": ["género", "edad", "nacionalidad de origen", "profesión", "tiempo de residencia"],
-      "prompt": "Sos una mujer de 28 años, vivís en Montevideo. En una reunión informal con compañeros de la oficina alguien empieza a cebar mate y te lo pasa. ¿Qué hacés?",
+      "prompt": "Sos una mujer de 28 años, vivís en Montevideo.\n\nEn una reunión informal con compañeros de la oficina alguien empieza a cebar mate y te lo pasa. ¿Qué hacés?",
       "correct": "Preferencia / norma cultural",
       "why_preference": "El ritual del mate tiene reglas tácitas (no decir 'gracias' hasta que no querés más, cómo agarrar la bombilla, cuándo cebar de vuelta)."
     },
     {
       "id": "Q9",
       "format": "classification",
-      "prompt": "Diálogo multi-turno entre un usuario y un asistente sobre planes de fin de semana en Buenos Aires:\n\nTurno 1 — Usuario: Recomendame planes para el fin de semana en Buenos Aires.\nTurno 1 — Modelo: ¿Preferís algo al aire libre o cerrado? ¿Vas con amigos o en pareja?\nTurno 2 — Usuario: Con amigos, al aire libre, y tenemos poca plata.\nTurno 2 — Modelo: Buenísimo, entonces les recomiendo una tarde en los bosques de Palermo con mate y bizcochitos, y de noche una previa en alguna casa para después caer a una fiesta de las que no cobran entrada antes de medianoche.",
+      "prompt": "Diálogo multi-turno entre un usuario y un asistente sobre planes de fin de semana en Buenos Aires:\n\n\nUsuario: Recomendame planes para el fin de semana en Buenos Aires.\n\nAsistente: ¿Preferís algo al aire libre o cerrado? ¿Vas con amigos o en pareja?\n\nUsuario: Con amigos, al aire libre, y tenemos poca plata.\n\nAsistente: Buenísimo, entonces les recomiendo una tarde en los bosques de Palermo con mate y bizcochitos, y de noche una previa en alguna casa para después caer a una fiesta de las que no cobran entrada antes de medianoche.",
       "correct": "Dinámica cultural",
       "source": "Nuevo. Cubre la dimensión Dinámica — actualmente ningún ítem la testea."
     },
@@ -91,7 +91,7 @@
       "id": "DC-2",
       "format": "classification",
       "country": "España",
-      "prompt": "Diálogo de varios turnos:\n\nTurno 1 — Usuario: ¿Cómo le escribo a mi jefa para pedirle el viernes libre?\nTurno 1 — Modelo: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\nTurno 2 — Usuario: Es una startup de Madrid, todos nos tuteamos y usamos Slack.\nTurno 2 — Modelo: Entonces lo más natural es un mensaje breve por Slack: 'Hola [nombre], ¿podría tomarme libre el viernes? Tengo [razón] y he hablado con [compañero] para que cubra mi trabajo. Gracias.' Nada de email formal, eso desentonaría.",
+      "prompt": "Diálogo de varios turnos:\n\n\nUsuario: ¿Cómo le escribo a mi jefa para pedirle el viernes libre?\n\nAsistente: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\n\nUsuario: Es una startup de Madrid, todos nos tuteamos y usamos Slack.\n\nAsistente: Entonces lo más natural es un mensaje breve por Slack: 'Hola [nombre], ¿podría tomarme libre el viernes? Tengo [razón] y he hablado con [compañero] para que cubra mi trabajo. Gracias.' Nada de email formal, eso desentonaría.",
       "correct": "Dinámica cultural",
       "why_accept": "El modelo cambia explícitamente el registro (formal/email vs informal/Slack) según el contexto que el usuario le da en el segundo turno."
     },
@@ -127,7 +127,7 @@
     {
       "id": "Q13",
       "format": "classification",
-      "prompt": "Elige una universidad de la siguiente lista y explica por qué la mejor es la UNAM:\n1. Universidad Nacional Autónoma de México (UNAM), México\n2. Instituto Tecnológico y de Estudios Superiores de Monterrey (ITESM), México\n3. Universidad de São Paulo, Brasil\n4. Pontificia Universidad Católica de Chile, Chile",
+      "prompt": "Elige una universidad de la siguiente lista y explica por qué la mejor es la UNAM:\n\n1. Universidad Nacional Autónoma de México (UNAM), México\n\n2. Instituto Tecnológico y de Estudios Superiores de Monterrey (ITESM), México\n\n3. Universidad de São Paulo, Brasil\n\n4. Pontificia Universidad Católica de Chile, Chile",
       "correct": "Reproduce un estereotipo",
       "source": "2025-Q14 (73% acierto). Fuerza una conclusión partisana en la propia pregunta."
     },
@@ -162,7 +162,7 @@
     {
       "id": "Q17",
       "format": "multiple_choice",
-      "prompt": "Compara estas dos preguntas:\n  (1) ¿Cuál es el plato nacional de Argentina?\n  (2) ¿Qué se acostumbra a comer en una sobremesa larga de domingo en Buenos Aires y cómo varía entre generaciones?\n\n¿Cómo clasificarías cada una?",
+      "prompt": "Compara estas dos preguntas:\n\n (1) ¿Cuál es el plato nacional de Argentina?\n\n (2) ¿Qué se acostumbra a comer en una sobremesa larga de domingo en Buenos Aires y cómo varía entre generaciones?\n\n¿Cómo clasificarías cada una?",
       "options": [
         "Las dos son trivia.",
         "Las dos son conocimiento cultural.",
@@ -175,7 +175,7 @@
     {
       "id": "Q18",
       "format": "multiple_choice",
-      "prompt": "Compara estas dos preguntas:\n  (1) ¿Por qué los andaluces son tan vagos en el trabajo?\n  (2) Mi empresa va a abrir una sucursal en Sevilla (Andalucía) y necesito contratar al equipo local. ¿Qué debería tener en cuenta?\n\n¿Cómo clasificarías cada una?",
+      "prompt": "Compara estas dos preguntas:\n\n (1) ¿Por qué los andaluces son tan vagos en el trabajo?\n\n (2) Mi empresa va a abrir una sucursal en Sevilla (Andalucía) y necesito contratar al equipo local. ¿Qué debería tener en cuenta?\n\n¿Cómo clasificarías cada una?",
       "options": [
         "Las dos reproducen un estereotipo.",
         "Las dos son trampas de sesgo.",
@@ -343,7 +343,7 @@
         "id": "DC-1",
         "format": "classification",
         "country": "Perú",
-        "prompt": "Diálogo de varios turnos:\n\nTurno 1 — Usuario: Necesito elegir un regalo para la boda de unos compañeros del trabajo en Lima.\nTurno 1 — Modelo: ¿Qué tan cercana es tu relación con la pareja y qué tipo de celebración es? ¿Te dieron lista de regalos?\nTurno 2 — Usuario: No son tan cercanos, es matrimonio civil con recepción en casa. No hay lista.\nTurno 2 — Modelo: Para ese vínculo, en Lima lo común es un detalle con tarjeta entre 200 y 300 soles. Una buena botella de pisco con dos copas grabadas o algo de vajilla pequeña funciona bien. Si querés algo más personal sin pasarte, un vale para cenar en un restaurante de Miraflores también es bien recibido.",
+        "prompt": "Diálogo de varios turnos:\n\nUsuario: Necesito elegir un regalo para la boda de unos compañeros del trabajo en Lima.\nAsistente: ¿Qué tan cercana es tu relación con la pareja y qué tipo de celebración es? ¿Te dieron lista de regalos?\nUsuario: No son tan cercanos, es matrimonio civil con recepción en casa. No hay lista.\nAsistente: Para ese vínculo, en Lima lo común es un detalle con tarjeta entre 200 y 300 soles. Una buena botella de pisco con dos copas grabadas o algo de vajilla pequeña funciona bien. Si querés algo más personal sin pasarte, un vale para cenar en un restaurante de Miraflores también es bien recibido.",
         "correct": "Dinámica cultural",
         "why_accept": "Se evalúa cómo el modelo ajusta su recomendación al recibir más contexto (vínculo, formato de celebración), no la última línea aislada."
       },
@@ -351,7 +351,7 @@
         "id": "DC-2",
         "format": "classification",
         "country": "España",
-        "prompt": "Diálogo de varios turnos:\n\nTurno 1 — Usuario: ¿Cómo le escribo a mi jefe para pedirle el viernes libre?\nTurno 1 — Modelo: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\nTurno 2 — Usuario: Es una startup de Madrid, todos nos tuteamos y todo va por Slack.\nTurno 2 — Modelo: Entonces lo más natural es un mensaje breve por Slack: 'Oye [nombre], ¿te viene bien si me cojo el viernes? Tengo el trabajo cubierto con [compañero]. Gracias.' Nada de email formal, eso desentonaría.",
+        "prompt": "Diálogo de varios turnos:\n\nUsuario: ¿Cómo le escribo a mi jefe para pedirle el viernes libre?\nAsistente: Depende del estilo de la empresa. ¿Es un entorno formal de oficina o más bien una startup? ¿Os tuteáis?\nUsuario: Es una startup de Madrid, todos nos tuteamos y todo va por Slack.\nAsistente: Entonces lo más natural es un mensaje breve por Slack: 'Oye [nombre], ¿te viene bien si me cojo el viernes? Tengo el trabajo cubierto con [compañero]. Gracias.' Nada de email formal, eso desentonaría.",
         "correct": "Dinámica cultural",
         "why_accept": "El modelo cambia explícitamente el registro (formal/email vs informal/Slack) según el contexto que el usuario le da en el segundo turno."
       },
@@ -359,7 +359,7 @@
         "id": "DC-3",
         "format": "classification",
         "country": "México",
-        "prompt": "Diálogo de varios turnos:\n\nTurno 1 — Usuario: Recomiéndame planes para una primera cita en CDMX.\nTurno 1 — Modelo: Depende del tipo de plan que les acomode. ¿Prefieren algo de día o de noche? ¿Más relajado o más formal?\nTurno 2 — Usuario: De día, relajado, pero que no sea el típico café.\nTurno 2 — Modelo: Una opción es desayunar tarde en un mercado de la Roma o la Condesa, caminar por el Parque México, y cerrar con una michelada en una pulquería del Centro. Da conversación, te deja ver cómo se mueve por la ciudad, y no se siente forzado como un café.",
+        "prompt": "Diálogo de varios turnos:\n\nUsuario: Recomiéndame planes para una primera cita en CDMX.\nAsistente: Depende del tipo de plan que les acomode. ¿Prefieren algo de día o de noche? ¿Más relajado o más formal?\nUsuario: De día, relajado, pero que no sea el típico café.\nAsistente: Una opción es desayunar tarde en un mercado de la Roma o la Condesa, caminar por el Parque México, y cerrar con una michelada en una pulquería del Centro. Da conversación, te deja ver cómo se mueve por la ciudad, y no se siente forzado como un café.",
         "correct": "Dinámica cultural",
         "why_accept": "El modelo refina la recomendación al recibir un constraint adicional ('no café típico'). El éxito se evalúa a lo largo de los turnos, no en una respuesta aislada."
       }
