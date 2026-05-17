@@ -25,14 +25,36 @@ a regular input and look up the right string in ``T``.
 from __future__ import annotations
 
 import logging
-import math
 import os
 import random
+import time
+from functools import wraps
 
 import gradio as gr
 import pandas as pd
 
 log = logging.getLogger("hackathon")
+
+
+def _timed(label: str):
+    """Decorator that logs the wall-clock duration of a handler call.
+
+    Applied to the user-facing save / fetch handlers so the latency of
+    each click shows up in the terminal — invaluable for telling apart
+    "cache hit / Hub round-trip / CAS retry" when a save feels slow."""
+
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            t0 = time.monotonic()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                log.info("%s took %.2fs", label, time.monotonic() - t0)
+
+        return wrapper
+
+    return deco
 
 from data import (
     ACCEPT_CHOICES,
@@ -473,6 +495,7 @@ def _merged_prompt_display(lang: str, system_prompt: str, prompt: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+@_timed("save_prompt")
 def save_prompt(
     system_prompt: str,
     prompt: str,
@@ -554,6 +577,7 @@ def save_prompt(
 # ---------------------------------------------------------------------------
 
 
+@_timed("fetch_next_validation")
 def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt_text, status)`` for the next prompt the
     user can validate. ``idx == -1`` means nothing to do.
@@ -622,6 +646,7 @@ def fetch_next_validation(lang: str, profile: gr.OAuthProfile | None):
     return first_pick
 
 
+@_timed("save_validation")
 def save_validation(
     idx: int,
     slot: int,
@@ -728,6 +753,7 @@ def save_validation(
 # ---------------------------------------------------------------------------
 
 
+@_timed("fetch_next_voting")
 def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
     """Return ``(idx, slot, prompt, answer_a, answer_b, status)`` for the next
     fully-validated prompt the user can vote on. ``idx == -1`` means nothing.
@@ -791,6 +817,7 @@ def fetch_next_voting(lang: str, profile: gr.OAuthProfile | None):
     return first_pick
 
 
+@_timed("save_vote")
 def save_vote(
     idx: int,
     slot: int,
@@ -878,10 +905,12 @@ def _test_max_possible(lang: str) -> int:
 
 
 def _pass_raw(max_possible: float) -> float:
-    """Smallest 0.5-step raw score that meets ``TEST_PASS_THRESHOLD``.
-    Returns a fractional float when the threshold lands on a half-point
-    (e.g. threshold=0.7, max=16 → 11.5); for the current 12/16 it's 12.0."""
-    return math.ceil(TEST_PASS_THRESHOLD * max_possible * 2) / 2
+    """``TEST_PASS_THRESHOLD`` is already a raw-points value (e.g. 12 out
+    of 16); ``max_possible`` is passed in for the rare case where the
+    question bank grows past the threshold and we want to round-trip
+    via "X / max" display. Today: returns the threshold unchanged."""
+    del max_possible
+    return float(TEST_PASS_THRESHOLD)
 
 
 def _fmt_score(s: float) -> str:
@@ -1094,12 +1123,10 @@ def load_test(
     if profile is not None:
         best = best_test_score(profile.username, participants_df)
         if best > 0:
-            # Best score is stored as a fraction in [score_min, 1]; convert
-            # back to raw points (best * max) so it's comparable to the
-            # in-progress test score format.
+            # Stored scores are raw points (matches the X/16 display).
             status_lines.append(
                 s["test_status_best"].format(
-                    raw=_fmt_score(best * max_possible),
+                    raw=_fmt_score(best),
                     max=_fmt_score(max_possible),
                 )
             )
@@ -1148,18 +1175,31 @@ def submit_test(
     penalty), see ``test_data.grade``.
 
     Outputs (in order): ``status_md``, ``submit_btn``, ``retake_btn``,
-    ``tab_writing``, ``tab_validation``, ``tab_voting``.
+    ``tab_writing``, ``tab_validation``, ``tab_voting``, then
+    ``MAX_TEST_QUESTIONS`` reject radios, ``MAX_TEST_QUESTIONS`` accept
+    radios, ``MAX_TEST_MCQ`` MCQ radios. The radios are reset to ``None``
+    on a successful submission (so the user gets a clean slate for the
+    next attempt or for visual confirmation that the answers landed), and
+    left untouched on the error paths (so the user can fix and resubmit
+    without re-entering their answers).
     """
     s = _t(lang)
     max_possible = _test_max_possible(lang)
     needed = _pass_raw(max_possible)
     noop = (gr.update(), gr.update(), gr.update())  # tabs unchanged
+    keep_radios = tuple(
+        gr.update() for _ in range(2 * MAX_TEST_QUESTIONS + MAX_TEST_MCQ)
+    )
+    clear_radios = tuple(
+        gr.update(value=None) for _ in range(2 * MAX_TEST_QUESTIONS + MAX_TEST_MCQ)
+    )
     if profile is None:
         return (
             gr.update(value=s["test_login_required"]),
             gr.update(visible=True),
             gr.update(visible=False),
             *noop,
+            *keep_radios,
         )
     if not questions and not mcqs:
         return (
@@ -1167,6 +1207,7 @@ def submit_test(
             gr.update(visible=False),
             gr.update(visible=False),
             *noop,
+            *keep_radios,
         )
     # Slice the flat answer tuple back into the three pools, then pair the
     # values with their question ids in test order.
@@ -1186,14 +1227,16 @@ def submit_test(
             gr.update(visible=True),
             gr.update(visible=False),
             *noop,
+            *keep_radios,
         )
-    score, raw, _max = grade_test(paired, lang)
+    _score_frac, raw, _max = grade_test(paired, lang)
     # Past the unanswered check, every value in ``paired`` is a string —
     # safe to drop the Optional and persist as ``{qid: answer}`` alongside
-    # the score for later per-question analysis.
+    # the score for later per-question analysis. We store the RAW points
+    # (the same number shown in the UI), not the [0, 1] fraction.
     responses: dict[str, str] = {qid: str(value) for qid, value in paired}
     try:
-        attempt = record_test_attempt(profile.username, score, responses)
+        attempt = record_test_attempt(profile.username, float(raw), responses)
     except LookupError:
         return (
             gr.update(
@@ -1202,11 +1245,12 @@ def submit_test(
             gr.update(visible=True),
             gr.update(visible=False),
             *noop,
+            *keep_radios,
         )
     raw_str = _fmt_score(raw)
     max_str = _fmt_score(max_possible)
     needed_str = _fmt_score(needed)
-    passed = score >= TEST_PASS_THRESHOLD
+    passed = raw >= TEST_PASS_THRESHOLD
     if passed:
         status = s["test_status_passed"].format(
             raw=raw_str, max=max_str, attempt=attempt
@@ -1227,6 +1271,7 @@ def submit_test(
         tab_update,
         tab_update,
         tab_update,
+        *clear_radios,
     )
 
 
@@ -1828,6 +1873,12 @@ def build_demo() -> gr.Blocks:
                 tab_writing,
                 tab_validation,
                 tab_voting,
+                # Radio resets — see submit_test's docstring. Flatten in
+                # the same order submit_test packs them: reject pool,
+                # accept pool, MCQ pool.
+                *test_tab["reject_radios"],
+                *test_tab["accept_radios"],
+                *test_tab["mcq_radios"],
             ],
         )
         test_tab["retake_btn"].click(

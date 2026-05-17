@@ -117,8 +117,9 @@ class LoadTestAlreadyPassed(unittest.TestCase):
 
     def test_passed_user_sees_celebration_no_questions(self):
         # Score above threshold → short-circuit. No state, no questions
-        # visible, celebratory status_md.
-        df = _parts_with_score("alice", 1.0)  # 100% > 75% threshold
+        # visible, celebratory status_md. Scores are raw points now;
+        # 16 raw > 12 threshold.
+        df = _parts_with_score("alice", 16.0)
         out = app.load_test("es", _prof("alice"), participants_df=df)
         questions_state, mcq_state, intro_upd, status_upd, submit_upd, retake_upd, *_rest = out
         self.assertEqual(questions_state, [])
@@ -146,12 +147,11 @@ class LoadTestFresh(unittest.TestCase):
         self.assertEqual(retake_upd.get("visible"), False)
 
     def test_best_score_line_shown_when_user_has_attempts_but_not_passing(self):
-        # 50% = below 75% threshold; the test re-renders but adds the
+        # 8 raw < 12 threshold; the test re-renders but adds the
         # "best score so far" line above the intro.
-        df = _parts_with_score("alice", 0.5)
+        df = _parts_with_score("alice", 8.0)
         out = app.load_test("es", _prof("alice"), participants_df=df)
         _, _, _, status_upd, *_ = out
-        # 0.5 * 16 = 8; should appear as "8 / 16" somewhere in the line.
         self.assertIn("8 / 16", status_upd.get("value"))
 
 
@@ -248,12 +248,15 @@ class SubmitTestPerfect(unittest.TestCase):
         spy = _RecordSpy()
         with patch("app.record_test_attempt", spy):
             out = app.submit_test(questions, mcqs, "es", _prof("alice"), *answers)
-        status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out
-        # Recorded once with the perfect fraction.
+        # First 6 outputs: status + buttons + tabs. The rest are the
+        # 20 + 20 + 4 = 44 radio resets (cleared after a successful submit).
+        status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out[:6]
+        radio_updates = out[6:]
+        # Recorded once with the perfect score (raw points = 16/16).
         self.assertEqual(len(spy.calls), 1)
         username, score, responses = spy.calls[0]
         self.assertEqual(username, "alice")
-        self.assertEqual(score, 1.0)
+        self.assertEqual(score, 16.0)
         # Every question got a recorded response (qid → bucket).
         self.assertEqual(set(responses), {q["id"] for q in questions} | {m["id"] for m in mcqs})
         # Passed message + Submit hidden + Retake shown + all three gated
@@ -264,6 +267,10 @@ class SubmitTestPerfect(unittest.TestCase):
         self.assertEqual(tab_w.get("visible"), True)
         self.assertEqual(tab_v.get("visible"), True)
         self.assertEqual(tab_vo.get("visible"), True)
+        # All 44 radio updates clear to None on a successful submit.
+        self.assertEqual(len(radio_updates), 44)
+        for upd in radio_updates:
+            self.assertIs(upd.get("value"), None)
 
 
 class SubmitTestFailed(unittest.TestCase):
@@ -289,8 +296,8 @@ class SubmitTestFailed(unittest.TestCase):
         spy = _RecordSpy()
         with patch("app.record_test_attempt", spy):
             out = app.submit_test(questions, mcqs, "es", _prof("alice"), *answers)
-        status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out
-        # Recorded as a (negative) fraction.
+        status_upd, submit_upd, retake_upd, tab_w, tab_v, tab_vo = out[:6]
+        # Recorded as raw points (a negative number for wrong-side answers).
         self.assertEqual(len(spy.calls), 1)
         _user, score, _responses = spy.calls[0]
         self.assertLess(score, 0)
@@ -301,6 +308,11 @@ class SubmitTestFailed(unittest.TestCase):
         self.assertNotIn("visible", tab_w)
         self.assertNotIn("visible", tab_v)
         self.assertNotIn("visible", tab_vo)
+        # Radios cleared on every submit, even when it didn't pass.
+        radio_updates = out[6:]
+        self.assertEqual(len(radio_updates), 44)
+        for upd in radio_updates:
+            self.assertIs(upd.get("value"), None)
 
 
 class SubmitTestNotParticipant(unittest.TestCase):

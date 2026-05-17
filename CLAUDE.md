@@ -343,7 +343,7 @@ In rough priority order:
    reaches three positive validations, picks a model pair and fills in the
    answers. Until that exists, the voting tab is empty for any prompt the
    organisers haven't manually answered.
-2. **Pagination / caching for leaderboard.** The 30 s read cache covers
+2. **Pagination / caching for leaderboard.** The 5 min read cache covers
    most back-to-back tab opens, but a large dataset still pays an
    occasional cache-miss cost (full parquet download + pandas conversion).
    Either push aggregations into a separate small dataset that the Space
@@ -375,6 +375,50 @@ In rough priority order:
    end-to-end without an HF token.
 7. **Audit log.** Optional column tracking _who changed what when_ for each
    slot, so disputed validations/votes can be traced.
+8. **Optimistic UI for save handlers (NOT recommended for the hackathon
+   without the mitigations below).** Today every save handler waits for
+   the Hub commit to land (~2-3 s on Xet, longer on flaky networks) before
+   returning "Saved!". Returning immediately and committing in a
+   background thread would drop perceived save latency to ~50 ms, but
+   re-opens three classes of silent-data-loss bug we explicitly designed
+   the CAS path to prevent:
+
+   - **Process restart with pending commits.** HF Spaces auto-restart on
+     idle / OOM / redeploy. An in-flight background commit is lost; the
+     user already saw ✓ and moved on.
+   - **Delayed error reporting.** A background commit that 412-exhausts
+     or 500s surfaces seconds after the user advanced to the next prompt
+     — easy to miss in a status banner, and we have no way to un-advance
+     them or recover the lost answer.
+   - **Reservation released before commit lands.** `save_validation`
+     releases the slot on handler return. With async commit, the slot is
+     free again before the data is persisted; if the commit then fails,
+     another user can grab and overwrite the slot with no trace of the
+     lost validation.
+
+   Mitigations to make this safe (each one is real work):
+
+   - **Persistent on-disk commit queue** in a known location (e.g.
+     `/tmp/hackathon_pending/` or a tiny SQLite file). On startup,
+     replay any unfinished commits before accepting new clicks. Survives
+     OOM / restart.
+   - **Block process exit until pending commits drain** via an
+     `atexit` handler + signal handlers (SIGTERM, SIGINT). HF Spaces
+     send SIGTERM with a short grace period; the handler needs a
+     deadline.
+   - **Sticky error banner per user** with retry button — the user
+     should see "save N failed, click to retry" until they acknowledge,
+     even if they've moved on to other prompts.
+   - **Hold reservation until commit lands**, not until handler returns
+     — so a failed commit means a still-reserved slot the user can
+     re-submit into, instead of an orphaned empty slot anyone can grab.
+   - **Serialize per-user commits** (one queue per username) so two
+     rapid clicks don't have their commits race against each other.
+
+   For the hackathon: probably not worth it. Saves are 2-3 s with Xet
+   uploads + warm cache. A small "Saving…" spinner that makes the wait
+   acknowledged (rather than mysterious) gets most of the perceived-
+   latency benefit without giving up atomic correctness.
 
 ### Entry-test follow-ups (known, deferred)
 

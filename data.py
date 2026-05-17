@@ -21,11 +21,11 @@ so the SHA we use for ``parent_commit`` matches the rows we just read.
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
 import random
+import tempfile
 import threading
 import time
 from typing import Callable, Optional, Tuple
@@ -43,13 +43,28 @@ load_dotenv()
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
 log = logging.getLogger("hackathon")
+# Make ``log.info`` messages actually appear in the terminal — without
+# this, the cache-miss / commit-conflict / latency logs go to the void
+# because Python's root logger defaults to WARNING. Override via
+# ``HACKATHON_LOG_LEVEL=WARNING python app.py`` if it gets too chatty.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("HACKATHON_LOG_LEVEL", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
 
-# Short-TTL cache for HF dataset reads. Each entry is
+# In-process cache for HF dataset reads. Each entry is
 # ``(loaded_at_monotonic, sha, df)``; the SHA is what CAS writers use as
 # ``parent_commit``. A successful commit overwrites the entry with the new
 # (sha, df) so the next reader is instant; on a 412 conflict the entry is
 # invalidated so the retry loop re-fetches.
-_CACHE_TTL_SECONDS = 30.0
+#
+# 5 min is long enough to absorb the typical "read, think, save" cycle
+# without re-paying the Hub round-trip (and CAS detects any actual staleness
+# at commit time via parent_commit). Shorter TTLs (e.g. 30 s) were tripping
+# on every save_prompt because participant lookups during the click happen
+# >30 s after init_ui's first read.
+_CACHE_TTL_SECONDS = 300.0
 _cache_lock = threading.Lock()
 _cache: dict[str, tuple[float, Optional[str], pd.DataFrame]] = {}
 
@@ -155,14 +170,13 @@ EMPTY_TEST_SCORE = "{}"
 # response analysis under data/analysis_test_2025.md).
 EMPTY_TEST_RESPONSES = "{}"
 
-# Pass mark for the entry test, expressed as a fraction of the max possible
-# raw score. The current grading scheme (see ``test_data.grade``) tops out
-# at 14 classification points + 2 MCQ points = 16; ``12 / 16 = 0.75``
-# corresponds to "need at least 12 raw points to unlock the action tabs".
-# Stored test scores are also fractions in [score_min, 1.0] (the partial-
-# credit scheme can go negative), so this is directly comparable with
-# ``best_test_score``.
-TEST_PASS_THRESHOLD = 12 / 16
+# Pass mark for the entry test, in RAW POINTS. The current grading scheme
+# (see ``test_data.grade``) tops out at 14 classification points + 2 MCQ
+# points = 16; ``12`` means "need at least 12 raw points to unlock the
+# action tabs". Stored test scores are raw points (the same float the user
+# sees in the "X / 16" status message), so this is directly comparable
+# with ``best_test_score``.
+TEST_PASS_THRESHOLD = 12.0
 
 # Canonical validation bucket ordering, shared across the app and the entry
 # test. Lives here (not in app.py) so non-Gradio modules like ``test_data``
@@ -382,7 +396,8 @@ def parse_test_responses(raw: str | None) -> dict[str, dict[str, str]]:
 
 
 def best_test_score(username: str | None, df: pd.DataFrame | None = None) -> float:
-    """Return the user's best attempt score in [0, 1], or 0.0 if no attempts."""
+    """Return the user's best attempt score in raw points (matches the
+    ``X / 16`` numbers shown in the UI), or 0.0 if no attempts."""
     if not username:
         return 0.0
     if df is None:
@@ -437,21 +452,44 @@ def _commit_dataset(
     features: Features,
     parent_commit: str,
     commit_message: str,
-) -> None:
+) -> str:
     """Replace the dataset's single Parquet shard at ``path_in_repo`` with
     the encoded ``df``, requiring the repo to still be at ``parent_commit``.
+
+    Returns the new commit SHA so callers (e.g. ``_commit_with_cas``) can
+    warm the read cache with the just-committed ``(sha, df)`` pair, sparing
+    the next reader a Hub round-trip.
+
+    Writes the parquet to a temp file (not a ``BytesIO``) so HF's Xet
+    storage backend can pick it up — Xet does chunk-based uploads that
+    skip blocks already present on the server, which is meaningfully
+    faster for ~MB parquet shards where most rows are unchanged between
+    saves. With ``BytesIO`` we'd silently fall back to a plain HTTP POST
+    of the entire 2 MB on every commit (see the warning
+    "Uploading files as a binary IO buffer is not supported by Xet
+    Storage. Falling back to HTTP upload.").
+
     Raises ``HfHubHTTPError`` with status 412 if another writer landed first."""
-    buf = io.BytesIO()
-    Dataset.from_pandas(df, preserve_index=False, features=features).to_parquet(buf)
-    buf.seek(0)
-    api.create_commit(
-        repo_id=repo_id,
-        repo_type="dataset",
-        operations=[CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buf)],
-        commit_message=commit_message,
-        parent_commit=parent_commit,
-        token=HF_TOKEN,
-    )
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        Dataset.from_pandas(df, preserve_index=False, features=features).to_parquet(tmp_path)
+        info = api.create_commit(
+            repo_id=repo_id,
+            repo_type="dataset",
+            operations=[
+                CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=tmp_path)
+            ],
+            commit_message=commit_message,
+            parent_commit=parent_commit,
+            token=HF_TOKEN,
+        )
+        return info.oid
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def _commit_participants(
@@ -461,8 +499,8 @@ def _commit_participants(
     path_in_repo: str,
     parent_commit: str,
     commit_message: str,
-) -> None:
-    _commit_dataset(
+) -> str:
+    return _commit_dataset(
         df,
         api=api,
         repo_id=PARTICIPANTS_REPO,
@@ -480,8 +518,8 @@ def _commit_prompts(
     path_in_repo: str,
     parent_commit: str,
     commit_message: str,
-) -> None:
-    _commit_dataset(
+) -> str:
+    return _commit_dataset(
         df,
         api=api,
         repo_id=PROMPTS_REPO,
@@ -497,7 +535,7 @@ def _commit_with_cas(
     repo_id: str,
     fetch: Callable[[bool], tuple[str, pd.DataFrame]],
     mutator: Callable[[pd.DataFrame], Optional[pd.DataFrame]],
-    commit: Callable[[pd.DataFrame, str], None],
+    commit: Callable[[pd.DataFrame, str], str],
     max_retries: int = _COMMIT_MAX_RETRIES,
 ) -> Tuple[Optional[bool], int]:
     """Apply ``mutator`` and push via ``commit`` under compare-and-swap.
@@ -510,9 +548,16 @@ def _commit_with_cas(
          It returns either:
            * a mutated df → commit it
            * ``None``     → abort (e.g. precondition no longer holds)
-      3. ``commit(df, parent_sha)`` uploads. On HTTP 412 (another writer
-         landed since we read), the cache is invalidated and the loop
-         re-runs — the mutator gets to re-evaluate against the new state.
+      3. ``commit(df, parent_sha)`` uploads and returns the new commit
+         SHA. On HTTP 412 (another writer landed since we read), the cache
+         is invalidated and the loop re-runs — the mutator gets to
+         re-evaluate against the new state.
+
+    On success, the cache is updated to ``(new_sha, mutated_df)``. Because
+    the parent_sha was still HEAD when our commit landed, no other writer
+    raced in between, so our mutated df IS the new state — the next reader
+    can serve it without a Hub round-trip. This is the single biggest
+    latency win for the save+load cycle (eliminates one Hub read per click).
 
     Returns ``(status, attempts_used)``:
       * ``(True, n)``    committed after ``n + 1`` attempts
@@ -527,7 +572,7 @@ def _commit_with_cas(
         if result is None:
             return False, retry
         try:
-            commit(result, parent_sha)
+            new_sha = commit(result, parent_sha)
         except HfHubHTTPError as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status != 412:
@@ -542,11 +587,13 @@ def _commit_with_cas(
             # Jittered exponential backoff: 50ms · 2^retry · [0.5, 1.5).
             time.sleep(0.05 * (2**retry) * (0.5 + random.random()))
             continue
-        # Success — refresh the cache with our committed state so the next
-        # reader doesn't pay a Hub round-trip. We don't have the new SHA
-        # without another dataset_info call; invalidate instead so the next
-        # writer refetches a real SHA before committing.
-        _cache_invalidate(repo_id)
+        # Success — warm the cache with our committed state so the next
+        # reader is instant. parent_sha was still HEAD when we committed,
+        # so ``result`` IS the canonical new state.
+        if new_sha:
+            _cache_put(repo_id, new_sha, result)
+        else:
+            _cache_invalidate(repo_id)
         return True, retry
     raise RuntimeError(
         f"could not commit to {repo_id} after {max_retries} retries"
@@ -572,9 +619,9 @@ def commit_prompts_with_cas(
     def fetch(fresh: bool) -> tuple[str, pd.DataFrame]:
         return load_prompts_with_sha(fresh=fresh)
 
-    def commit(df: pd.DataFrame, parent_sha: str) -> None:
+    def commit(df: pd.DataFrame, parent_sha: str) -> str:
         msg = commit_message(df) if callable(commit_message) else commit_message
-        _commit_prompts(
+        return _commit_prompts(
             df,
             api=api,
             path_in_repo=path_in_repo,
@@ -655,8 +702,8 @@ def record_test_attempt(
         captured_attempt.append(attempt)
         return df
 
-    def commit(df: pd.DataFrame, parent_sha: str) -> None:
-        _commit_participants(
+    def commit(df: pd.DataFrame, parent_sha: str) -> str:
+        return _commit_participants(
             df,
             api=api,
             path_in_repo=path_in_repo,

@@ -49,30 +49,32 @@ class FmtScore(unittest.TestCase):
 
 
 class PassRaw(unittest.TestCase):
-    """Smallest 0.5-step raw score that meets ``TEST_PASS_THRESHOLD``."""
+    """``TEST_PASS_THRESHOLD`` is now stored as raw points, not a fraction.
+    ``_pass_raw`` just round-trips it for the display layer."""
 
-    def test_exact_quarter_threshold(self):
-        # threshold = 0.75, max = 16 → 12.0 exactly.
-        with patch("app.TEST_PASS_THRESHOLD", 0.75):
+    def test_returns_threshold_unchanged(self):
+        with patch("app.TEST_PASS_THRESHOLD", 12.0):
             self.assertEqual(app._pass_raw(16), 12.0)
 
-    def test_threshold_lands_on_half_point(self):
-        # threshold = 0.7, max = 16 → 11.2 raw → ceil to 11.5 (the next
-        # 0.5-step). Without the half-point ceiling we'd silently let
-        # 11 pass (11/16 = 0.6875 < 0.7).
-        with patch("app.TEST_PASS_THRESHOLD", 0.7):
+    def test_works_for_half_point_thresholds(self):
+        # The display formatter handles 11.5 nicely (see _fmt_score), so a
+        # half-point threshold should round-trip untouched.
+        with patch("app.TEST_PASS_THRESHOLD", 11.5):
             self.assertEqual(app._pass_raw(16), 11.5)
 
-    def test_threshold_at_one_requires_perfect(self):
-        with patch("app.TEST_PASS_THRESHOLD", 1.0):
-            self.assertEqual(app._pass_raw(16), 16.0)
+    def test_max_possible_ignored(self):
+        # Today ``max_possible`` doesn't affect the return — it's kept in
+        # the signature in case we want to clamp/scale later.
+        with patch("app.TEST_PASS_THRESHOLD", 10.0):
+            self.assertEqual(app._pass_raw(16), 10.0)
+            self.assertEqual(app._pass_raw(20), 10.0)
 
-    def test_current_threshold_resolves_to_12_of_16(self):
-        # Sanity: the actual current configuration. Lock the documented
-        # "12 / 16" pass mark so a future threshold tweak that breaks the
-        # display strings ("need 12 / 16") gets caught here.
+    def test_current_threshold_is_12_raw(self):
+        # Sanity: the actual current configuration. Locks the documented
+        # "need 12 / 16" pass mark so a future threshold tweak that breaks
+        # the display strings gets caught here.
         self.assertEqual(app._pass_raw(16), 12.0)
-        self.assertAlmostEqual(TEST_PASS_THRESHOLD, 0.75)
+        self.assertEqual(TEST_PASS_THRESHOLD, 12.0)
 
 
 class TestMaxPossible(unittest.TestCase):
