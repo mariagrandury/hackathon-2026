@@ -55,15 +55,25 @@ log = logging.getLogger("hackathon")
 # ``HF_TOKEN`` that the Space uses for the participants and prompts
 # datasets — no separate secret needed.
 TEST_BANK_REPO = "mariagrandury/hackathon_test_bank"
-TEST_FILE = "test-2026.json"
+# Per-language file inside the dataset. ES is the canonical ``test-2026.json``;
+# EN / PT are translations of the prompt framing while keeping
+# Spanish-cultural content (idioms, in-character dialogues, region names)
+# intact — see ``translate_test_bank.py``. Unknown languages fall back to ES.
+TEST_FILES = {
+    "es": "test-2026.json",
+    "en": "test-2026-en.json",
+    "pt": "test-2026-pt.json",
+}
+_DEFAULT_LANG = "es"
 DATA_DIR = "data"  # local fallback only; not synced to the Space
 SUPPORTED_FORMAT = "classification"
 
-# Module-level cache of the loaded JSON. The bank changes only when an
-# organiser pushes a new version; tab opens shouldn't re-download it.
-# The lock serialises first-load attempts under Gradio's threaded server
-# so we don't fire N concurrent hf_hub_download calls.
-_BANK_CACHE: dict | None = None
+# Per-language module-level cache of the loaded JSON. The bank changes
+# only when an organiser pushes a new version; tab opens shouldn't
+# re-download it. The lock serialises first-load attempts (per language)
+# under Gradio's threaded server so we don't fire N concurrent
+# ``hf_hub_download`` calls for the same file.
+_BANK_CACHE: dict[str, dict] = {}
 _BANK_LOCK = threading.Lock()
 
 # Per-category quota used by the entry test. The first
@@ -86,39 +96,50 @@ _LABEL_TO_KEY = {
 }
 
 
-def _local_path() -> str:
+def _local_path(lang: str) -> str:
     """Bundled fallback path for dev / offline use."""
     here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, DATA_DIR, TEST_FILE)
+    return os.path.join(here, DATA_DIR, TEST_FILES.get(lang, TEST_FILES[_DEFAULT_LANG]))
 
 
-def _load_bank() -> dict:
-    """Return the test-bank JSON, fetched from the private HF dataset and
-    cached in-process. Falls back to the local bundled file (dev / offline)
-    if the Hub fetch fails for any reason.
+def _resolve_lang(lang: str | None) -> str:
+    """Map an arbitrary language string to a key in ``TEST_FILES`` —
+    unknown languages get the canonical Spanish bank."""
+    if lang and lang in TEST_FILES:
+        return lang
+    return _DEFAULT_LANG
+
+
+def _load_bank(lang: str) -> dict:
+    """Return the test-bank JSON for ``lang``, fetched from the private HF
+    dataset and cached per-language. Falls back to the local bundled file
+    (dev / offline) if the Hub fetch fails for any reason.
 
     Failures with no local fallback return an empty dict WITHOUT caching,
     so a transient token / connectivity issue on Space startup doesn't
     lock the entry test into an empty bank for the rest of the process —
     the next call gets another chance once the token / network recovers."""
-    global _BANK_CACHE
-    if _BANK_CACHE is not None:
-        return _BANK_CACHE
+    lang = _resolve_lang(lang)
+    cached = _BANK_CACHE.get(lang)
+    if cached is not None:
+        return cached
     with _BANK_LOCK:
         # Re-check under the lock so the second caller of a concurrent
         # first-load doesn't redo the fetch.
-        if _BANK_CACHE is not None:
-            return _BANK_CACHE
+        cached = _BANK_CACHE.get(lang)
+        if cached is not None:
+            return cached
+        filename = TEST_FILES[lang]
         try:
             path = hf_hub_download(
                 repo_id=TEST_BANK_REPO,
-                filename=TEST_FILE,
+                filename=filename,
                 repo_type="dataset",
                 token=HF_TOKEN,
             )
-            log.info("loaded test bank from %s", TEST_BANK_REPO)
+            log.info("loaded test bank %s from %s", filename, TEST_BANK_REPO)
         except (HfHubHTTPError, OSError) as exc:
-            fallback = _local_path()
+            fallback = _local_path(lang)
             if not os.path.exists(fallback):
                 log.warning(
                     "test bank Hub fetch failed (%s) and no local fallback at %s",
@@ -128,8 +149,9 @@ def _load_bank() -> dict:
             log.warning("test bank Hub fetch failed (%s); using local %s", exc, fallback)
             path = fallback
         with open(path, encoding="utf-8") as f:
-            _BANK_CACHE = json.load(f)
-        return _BANK_CACHE
+            payload = json.load(f)
+        _BANK_CACHE[lang] = payload
+        return payload
 
 
 def _label_to_key(label: str) -> str | None:
@@ -139,17 +161,17 @@ def _label_to_key(label: str) -> str | None:
 def _load_all_classification(lang: str) -> list[dict]:
     """Every classification question in the bank with ``correct_key``
     resolved. Preserves the file's order (which is canonical category
-    order). Questions whose ``correct`` label can't be mapped, or whose
-    ``format`` isn't ``classification``, are dropped.
-
-    Only Spanish ships today; ``lang`` is reserved for the upcoming
-    per-language banks (see the Entry-test follow-ups in CLAUDE.md)."""
-    payload = _load_bank()
+    order). Questions whose ``correct`` label can't be mapped (no
+    explicit ``correct_key`` and ``correct`` isn't a known ES label), or
+    whose ``format`` isn't ``classification``, are dropped."""
+    payload = _load_bank(lang)
     out = []
     for q in payload.get("questions", []):
         if q.get("format") != SUPPORTED_FORMAT:
             continue
-        key = _label_to_key(q.get("correct", ""))
+        # Prefer the explicit ``correct_key`` written by translate_test_bank.py;
+        # fall back to ES label lookup for back-compat with older bank files.
+        key = q.get("correct_key") or _label_to_key(q.get("correct", ""))
         if key is None:
             continue
         out.append({**q, "correct_key": key})
@@ -194,7 +216,7 @@ def load_mcq_questions(lang: str) -> list[dict]:
     right one — matches one of ``options``). All of them appear in the
     entry test; there's no per-category quota because they're discriminator
     questions that span categories."""
-    return [dict(q) for q in _load_bank().get("multiple_choice", [])]
+    return [dict(q) for q in _load_bank(lang).get("multiple_choice", [])]
 
 
 # ---------------------------------------------------------------------------
