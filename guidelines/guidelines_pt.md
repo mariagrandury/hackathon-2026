@@ -13,10 +13,10 @@ Vamos escrever entre todas as equipes **perguntas culturais** sobre nossos país
 ## 👣 Passo a passo
 
 1. **Leia este guia** (leva menos de 10 minutos) para aprender os conceitos-chave e como escrever perguntas ("prompts") de qualidade.
-2. **Faça o teste** de autoavaliação que confirma que você entendeu o guia.
+2. **Faça o teste** de autoavaliação para confirmar que você entendeu o guia.
 3. **Escreva seus prompts** para que vários LLMs gerem respostas.
-   - Se você sabe programar, suba como CSV à organização do hackathon na Hugging Face (convite mais abaixo).
-   - Se prefere uma interface, mande os prompts pelo aplicativo.
+   - Se você sabe programar, suba como CSV à organização do hackathon na Hugging Face ([convite](https://huggingface.co/organizations/somosnlp-hackathon-2026/share/DNcqoZrtSmEkyLLOiSYTQCzkcrquceDoVY)).
+   - Se prefere uma interface, mande os prompts [aqui](https://huggingface.co/spaces/somosnlp-hackathon-2026/cultural-preferences).
 4. **Valide prompts** de outras equipes.
 5. **Escolha a melhor resposta** entre as duas geradas para cada prompt validado.
 
@@ -31,21 +31,32 @@ Recursos:
 
 ---
 
+## ✨ Compensação
+
+Esta coleta de dados está enquadrada no [#HackathonSomosNLP 2026](https://somosnlp.org/hackathon), mas não é necessário participar do hackathon para colaborar com esta iniciativa de gerar um dataset de preferências.
+
+Vamos compensar o tempo que você dedicar a esta iniciativa:
+
+- A cada 50 prompts enviados = 25 USD
+- A cada 50 validações = 10 USD
+- A cada 50 votações = 10 USD
+- 50 prompts + 150 validações + 150 votações = coautoria do paper
+
+Cada pessoa pode enviar 50 prompts, validar 150 e votar em 150. Esse é o requisito para ser coautor/a do paper que apresentará este dataset. Se atingir o máximo e quiser colaborar mais, fale com a gente.
+
+As contagens são por pessoa e os vales podem ser trocados por créditos no Hub da HF e/ou um livro de IA/PLN/linguística.
+
+🚨 Os números se referem a prompts **validados**, ou seja, prompts que outras pessoas participantes validem como relevantes para compreender a cultura do seu país. Você pode ver o contador na aba "Classificação".
+
 ## 🚀 Relação com o Hackathon
 
-Esta coleta de dados está enquadrada no #HackathonSomosNLP 2026, mas não é necessário participar do desafio principal.
+Participar deste desafio é **requisito** para participar do desafio de pós-treinamento do hackathon. Vamos publicar o dataset de preferências na organização do hackathon para que todas as equipes possam usá-lo na fase de alinhamento com preferências (DPO).
 
 ### ✨ Incentivos
 
-- Requisito para acessar as GPUs = 100 prompts por equipe
-- A cada 50 prompts por equipe = 0,5 ptos (máx 2 ptos)
-- A cada 100 prompts por pessoa = 40 USD em créditos no Hub da HF ou livros de IA/PLN/linguística (independente do prêmio se a sua equipe vencer)
+- Requisito para acessar as GPUs para o desafio de pós-treinamento de LLMs = 100 prompts por equipe. A distribuição entre os membros da equipe deve ser equitativa — uma única pessoa não pode mandar ou validar todos os prompts.
+- A cada 50 prompts por equipe = 0,5 ptos (máx 2 ptos).
 - Todas as equipes terão acesso aos dados gerados por todas as outras para usar na fase de alinhamento. **Quanto melhor a qualidade dos dados, melhor a qualidade do projeto de vocês.**
-
-Notas:
-
-- Os números se referem a prompts **validados**.
-- **Antes** de mandar e validar prompts, é obrigatório ter passado no teste de compreensão.
 
 ### 🤗 Como organizar a equipe
 
@@ -585,13 +596,15 @@ Se você consegue identificar que dimensão o prompt está testando (ver §1.5 e
 
 ## 🚀 Vamos começar?
 
-1. Passe no [teste de compreensão](https://forms.gle/itbDvVxD2iG5nzsC6).
-2. Escreva seus prompts (§2) e suba como dataset.
+1. Passe no "Teste de acesso": volte ao topo desta página, clique na aba correspondente e desbloqueie os próximos passos.
+2. Escreva seus prompts seguindo este guia (§2).
 3. Valide prompts de outras equipes (§3).
 4. Vote a melhor resposta de cada par (§4).
 
-Algo não ficou claro? Pergunte para a gente.
+Algo não ficou claro? Pergunte para a gente no [Discord](https://discord.com/invite/my8w7JUxZR).
 
-<div style="display:flex; flex-wrap:wrap; justify-content:center; gap:12px; margin:24px 0;">
+<!--
+  <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:12px; margin:24px 0;">
   <a href="https://forms.gle/itbDvVxD2iG5nzsC6" target="_blank" rel="noopener" style="background-color:#FACC15; color:#1f2937; font-weight:600; padding:12px 20px; text-decoration:none; border-radius:6px; display:inline-block;">Fazer o teste de compreensão ↗</a>
 </div>
+-->
