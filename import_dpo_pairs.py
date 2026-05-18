@@ -59,6 +59,8 @@ from data import (
 
 LOCAL_DATASET_PATH = Path(__file__).resolve().parent / "data" / "dataset-2025.json"
 SEED = 20260512
+# Drop anything below this many whitespace-separated tokens.
+MIN_WORDS = 10
 
 # Spanish-name → 2-letter ISO. Listed in order of frequency in the dataset.
 COUNTRY_MAP = {
@@ -141,11 +143,20 @@ def main() -> None:
     rng = random.Random(SEED)
     rows = []
     next_id = 1
+    dropped_short = 0
     for country_name, country_rows in by_country.items():
         country_iso = COUNTRY_MAP[country_name]
         for r in country_rows:
+            if len(str(r.get("user_message", "")).split()) < MIN_WORDS:
+                dropped_short += 1
+                continue
             rows.append(_row(r, country_iso, next_id, rng))
             next_id += 1
+
+    print(
+        f"  dropped {dropped_short} short prompts "
+        f"(< {MIN_WORDS} words); kept {len(rows)}"
+    )
 
     print(f"Pushing {len(rows)} rows to {PROMPTS_REPO} (overwriting)…")
     ds = Dataset.from_list(rows, features=PROMPTS_FEATURES)
@@ -153,7 +164,10 @@ def main() -> None:
         PROMPTS_REPO,
         private=True,
         token=token,
-        commit_message=f"migrate {len(rows)} prompts from dataset-2025.json",
+        commit_message=(
+            f"migrate {len(rows)} prompts from dataset-2025.json "
+            f"(filter: >= {MIN_WORDS} words)"
+        ),
     )
     print("Done.")
 
