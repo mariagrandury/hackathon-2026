@@ -42,13 +42,20 @@ answers. All state lives in two private datasets on the Hub.
   rewrite only the parquet shard, never `README.md`, so the dataset card's
   `num_examples` goes stale after the first save; the parquet at the
   pinned `revision=sha` is authoritative.
-- **`test_data.py`** — question bank + grader for the Entry Test. Reads
-  `data/test-2026.json` (currently Spanish-only; other languages reuse it).
-  `load_questions` returns classification questions only — `multiple_choice`
-  ones are dropped because the test renders each Q as a single radio. The
-  Spanish display labels in `correct` are mapped to canonical bucket keys
-  (`trivial` / `stereotype` / `unrelated` / `knowledge` / `preference` /
-  `dynamics` / `bias_probe`) that match `VALIDATION_CHOICES` in `app.py`.
+- **`test_data.py`** — question bank + grader for the Entry Test. Fetches
+  the bank from the **private** `mariagrandury/hackathon_test_bank`
+  dataset at runtime (using the same `HF_TOKEN` the Space uses for the
+  other datasets), cached in-process after the first load. The local
+  `data/test-2026.json` is a dev fallback only — used when the Hub fetch
+  fails (offline / token missing) and intentionally NOT synced to the
+  Space (Space collaborators can read bundled files even on a private
+  Space; bundling the answer key would defeat the test).
+  `load_questions` returns classification questions only —
+  `multiple_choice` ones are dropped because the test renders each Q as
+  a single radio. The Spanish display labels in `correct` are mapped to
+  canonical bucket keys (`trivial` / `stereotype` / `unrelated` /
+  `knowledge` / `preference` / `dynamics` / `bias_probe`) that match
+  `VALIDATION_CHOICES` in `app.py`.
 - **`seed_datasets.py`** — one-shot script that overwrites both private
   datasets with dummy rows in the current schema. Used for local testing
   without v0 data.
@@ -85,6 +92,7 @@ Both private, owned by `mariagrandury`. Schema is the source of truth in
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mariagrandury/hackathon_participants` | `username`, `language`, `country`, `test_score`, `test_responses`                                                                               |
 | `mariagrandury/cultural_preferences`   | `username`, `language`, `country`, `prompt`, `prompt_validation_{1,2,3}`, `answer_a`, `model_a`, `answer_b`, `model_b`, `answer_chosen_{1,2,3}` |
+| `mariagrandury/hackathon_test_bank`    | single `test-2026.json` file (not a tabular dataset); see `test_data.py` for the schema                                                         |
 
 Email is intentionally NOT in the participants schema: `import_participants_info.py`
 keeps it locally (in the missing-HF sidecar CSV that organisers use to chase
@@ -232,17 +240,20 @@ are intentionally different.
 1. Create a private Gradio Space at `somosnlp-hackathon-2026/cultural-preferences`.
    Don't use the README template — first push from `deploy_to_space.sh`
    should land cleanly without a merge.
-2. In the Space settings, add an `HF_TOKEN` secret with read+write access to
-   the two private `mariagrandury/...` datasets.
+2. In the Space settings, add an `HF_TOKEN` secret with read+write access
+   to the three private `mariagrandury/...` datasets
+   (`hackathon_participants`, `cultural_preferences`,
+   `hackathon_test_bank`).
 3. Don't push this whole repo. The Space mirror is curated:
    `./deploy_to_space.sh` rsyncs only `app.py`, `data.py`, `test_data.py`,
-   `requirements.txt`, `README.md`, `guidelines/`, `images/`, and the single
-   file `data/test-2026.json` (the Entry Test question bank — the rest of
-   `data/` stays out) into a sibling clone of the Space repo (default
+   `requirements.txt`, `README.md`, `guidelines/`, and `images/` into a
+   sibling clone of the Space repo (default
    `../2026-space-cultural-preferences`). Commit + push from that clone.
    `CLAUDE.md`, `seed_datasets.py`, `import_dpo_pairs.py`,
-   `import_participants_info.py`, `tests/`, the rest of `data/`,
-   `reports/`, `.env*` deliberately stay out of the Space.
+   `import_participants_info.py`, `tests/`, `data/` (including the
+   `test-2026.json` answer key — fetched at runtime from the private
+   `hackathon_test_bank` dataset instead), `reports/`, `.env*`
+   deliberately stay out of the Space.
 
 The Space auto-detects the SDK and `app_file: app.py`. OAuth Just Works
 inside the Space because `hf_oauth: true` is set.

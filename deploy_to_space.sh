@@ -30,6 +30,11 @@ fi
 # Whitelist of paths to mirror into the Space. Anything not in this list
 # stays out of the Space repo (CLAUDE.md, seed/migrate scripts, tests,
 # data/, .env, etc.).
+#
+# NOTE: the entry-test bank (``data/test-2026.json``) is deliberately
+# NOT here — it would expose the answer key to anyone admitted to the
+# private Space. ``test_data.py`` fetches it at runtime from the private
+# ``mariagrandury/hackathon_test_bank`` dataset using ``HF_TOKEN``.
 PATHS=(
   app.py
   data.py
@@ -38,7 +43,6 @@ PATHS=(
   README.md
   guidelines
   images
-  data/test-2026.json
 )
 
 echo "Syncing runtime files into $SPACE_DIR"
@@ -51,11 +55,15 @@ for p in "${PATHS[@]}"; do
   if [[ -d "$src" ]]; then
     # Mirror directory contents; --delete removes files in dest that no
     # longer exist in src (so renames/removals propagate).
+    # ``test.md`` under guidelines/ is dev notes — keep it out of the
+    # Space mirror.
     mkdir -p "$SPACE_DIR/$p"
-    rsync -a --delete "$src/" "$SPACE_DIR/$p/"
+    rsync -a --delete --exclude="test.md" "$src/" "$SPACE_DIR/$p/"
   else
-    # Ensure the destination's parent directory exists (e.g. for
-    # ``data/test-2026.json`` we need ``data/`` on the Space side).
+    # Ensure the destination's parent directory exists. Today every
+    # file in PATHS is at the repo root, so this is a no-op; kept so
+    # adding a nested file later (e.g. ``some/dir/file.py``) doesn't
+    # silently fail when ``some/dir`` doesn't exist on the Space side.
     mkdir -p "$(dirname "$SPACE_DIR/$p")"
     rsync -a "$src" "$SPACE_DIR/$p"
   fi

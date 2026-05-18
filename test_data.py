@@ -1,7 +1,15 @@
 """Question bank and grading for the entry test.
 
-Questions live in ``data/test-2026.json``. The file holds the *full*
-classification bank, grouped by category in canonical order; the entry
+Questions live in a **private** HF dataset, ``TEST_BANK_REPO``, fetched
+at runtime via ``HF_TOKEN``. Keeping the bank out of the Space repo
+(where it used to live as ``data/test-2026.json``) prevents anyone
+admitted to the private Space from reading the answer key — Space
+collaborators can browse all bundled files, even when the Space is
+"private". For local dev, the file at ``data/test-2026.json`` is used
+as a fallback when the Hub fetch fails (e.g. offline).
+
+The dataset is a single JSON blob at ``test-2026.json`` with the *full*
+classification bank, grouped by category in canonical order. The entry
 test consumes only ``TEST_QUESTIONS_PER_CATEGORY`` per category, and the
 rest are reserved as hidden quality-check prompts for validators (see
 ``load_hidden_questions``)::
@@ -30,15 +38,33 @@ need more UI than a single radio.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 from collections import defaultdict
 from typing import Iterable
 
-from data import REJECT_CHOICES, VALIDATION_CHOICES
+from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import HfHubHTTPError
 
+from data import HF_TOKEN, REJECT_CHOICES, VALIDATION_CHOICES
+
+log = logging.getLogger("hackathon")
+
+# Private dataset that holds the entry-test bank. Fetched with the same
+# ``HF_TOKEN`` that the Space uses for the participants and prompts
+# datasets — no separate secret needed.
+TEST_BANK_REPO = "mariagrandury/hackathon_test_bank"
 TEST_FILE = "test-2026.json"
-DATA_DIR = "data"
+DATA_DIR = "data"  # local fallback only; not synced to the Space
 SUPPORTED_FORMAT = "classification"
+
+# Module-level cache of the loaded JSON. The bank changes only when an
+# organiser pushes a new version; tab opens shouldn't re-download it.
+# The lock serialises first-load attempts under Gradio's threaded server
+# so we don't fire N concurrent hf_hub_download calls.
+_BANK_CACHE: dict | None = None
+_BANK_LOCK = threading.Lock()
 
 # Per-category quota used by the entry test. The first
 # ``TEST_QUESTIONS_PER_CATEGORY`` items in each bucket of ``questions[]``
@@ -60,9 +86,50 @@ _LABEL_TO_KEY = {
 }
 
 
-def _path() -> str:
+def _local_path() -> str:
+    """Bundled fallback path for dev / offline use."""
     here = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(here, DATA_DIR, TEST_FILE)
+
+
+def _load_bank() -> dict:
+    """Return the test-bank JSON, fetched from the private HF dataset and
+    cached in-process. Falls back to the local bundled file (dev / offline)
+    if the Hub fetch fails for any reason.
+
+    Failures with no local fallback return an empty dict WITHOUT caching,
+    so a transient token / connectivity issue on Space startup doesn't
+    lock the entry test into an empty bank for the rest of the process —
+    the next call gets another chance once the token / network recovers."""
+    global _BANK_CACHE
+    if _BANK_CACHE is not None:
+        return _BANK_CACHE
+    with _BANK_LOCK:
+        # Re-check under the lock so the second caller of a concurrent
+        # first-load doesn't redo the fetch.
+        if _BANK_CACHE is not None:
+            return _BANK_CACHE
+        try:
+            path = hf_hub_download(
+                repo_id=TEST_BANK_REPO,
+                filename=TEST_FILE,
+                repo_type="dataset",
+                token=HF_TOKEN,
+            )
+            log.info("loaded test bank from %s", TEST_BANK_REPO)
+        except (HfHubHTTPError, OSError) as exc:
+            fallback = _local_path()
+            if not os.path.exists(fallback):
+                log.warning(
+                    "test bank Hub fetch failed (%s) and no local fallback at %s",
+                    exc, fallback,
+                )
+                return {}  # NOT cached — let the next call retry the Hub.
+            log.warning("test bank Hub fetch failed (%s); using local %s", exc, fallback)
+            path = fallback
+        with open(path, encoding="utf-8") as f:
+            _BANK_CACHE = json.load(f)
+        return _BANK_CACHE
 
 
 def _label_to_key(label: str) -> str | None:
@@ -70,18 +137,14 @@ def _label_to_key(label: str) -> str | None:
 
 
 def _load_all_classification(lang: str) -> list[dict]:
-    """Every classification question in the file with ``correct_key``
+    """Every classification question in the bank with ``correct_key``
     resolved. Preserves the file's order (which is canonical category
     order). Questions whose ``correct`` label can't be mapped, or whose
     ``format`` isn't ``classification``, are dropped.
 
     Only Spanish ships today; ``lang`` is reserved for the upcoming
     per-language banks (see the Entry-test follow-ups in CLAUDE.md)."""
-    path = _path()
-    if not os.path.exists(path):
-        return []
-    with open(path, encoding="utf-8") as f:
-        payload = json.load(f)
+    payload = _load_bank()
     out = []
     for q in payload.get("questions", []):
         if q.get("format") != SUPPORTED_FORMAT:
@@ -131,12 +194,7 @@ def load_mcq_questions(lang: str) -> list[dict]:
     right one — matches one of ``options``). All of them appear in the
     entry test; there's no per-category quota because they're discriminator
     questions that span categories."""
-    path = _path()
-    if not os.path.exists(path):
-        return []
-    with open(path, encoding="utf-8") as f:
-        payload = json.load(f)
-    return [dict(q) for q in payload.get("multiple_choice", [])]
+    return [dict(q) for q in _load_bank().get("multiple_choice", [])]
 
 
 # ---------------------------------------------------------------------------
