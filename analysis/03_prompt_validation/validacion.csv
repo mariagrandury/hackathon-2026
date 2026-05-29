@@ -1,0 +1,8 @@
+Bucket,Lado,n validaciones,% del total
+trivial,rechazo,17,5.4
+estereotipo,rechazo,14,4.5
+sin anclaje,rechazo,10,3.2
+conocimiento,aceptación,82,26.3
+preferencia,aceptación,74,23.7
+dinámica,aceptación,94,30.1
+trampa de sesgo,aceptación,21,6.7
