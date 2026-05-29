@@ -87,6 +87,8 @@ COUNTRY_PATTERNS: list[tuple[str, str]] = [
     ("colombia", "co"),
     ("costa rica", "cr"),
     ("cuba", "cu"),
+    ("dominicana", "do"),
+    ("dominican", "do"),
     ("ecuador", "ec"),
     ("cuenca", "ec"),
     ("el salvador", "sv"),
