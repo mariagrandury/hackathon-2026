@@ -52,3 +52,9 @@ Gradio SDK). Datasets stay under `mariagrandury/`.
    (`app.py`, `data.py`, `requirements.txt`, `README.md`, `guidelines/`,
    `images/`) into a local clone of the Space repo, then `git push` from
    that clone. See the script header for details.
+
+## Analysis
+
+```
+.venv/bin/python analysis/run_all.py 2>&1 | tail -55
+```

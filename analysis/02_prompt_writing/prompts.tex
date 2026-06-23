@@ -1,21 +1,21 @@
 \begin{table}[ht]
     \centering
-    \caption{Resumen de los $n=2356$ prompts escritos, agrupados por país. Incluye prompts importados desde el dataset 2025 mediante el sentinel \texttt{v0} (en total 1865 prompts), que entran al pipeline ya con par de respuestas pero sin pasar por validación humana. La columna \textit{\% con system prompt} mide la adopción del campo opcional que precede al prompt; la columna \textit{\% totalmente validados} indica qué proporción ya acumuló tres etiquetas de aceptación, condición para entrar a la fase de votación.}
+    \caption{Resumen de los $n=2920$ prompts escritos, agrupados por país. Incluye prompts importados desde el dataset 2025 mediante el sentinel \texttt{v0} (en total 1865 prompts), que entran al pipeline ya con par de respuestas pero sin pasar por validación humana. La columna \textit{\% con system prompt} mide la adopción del campo opcional que precede al prompt; la columna \textit{\% totalmente validados} indica qué proporción ya acumuló tres etiquetas de aceptación, condición para entrar a la fase de votación.}
     \label{tab:prompts}
     \begin{tabular}{lrrrrrr}
     \toprule
     País & Prompts & Autores únicos & v0 (importados) & Longitud media (carac.) & \% con system prompt & \% totalmente validados \\
     \midrule
-    Cuba & 634 & 1 & 634 & 502.40 & 100 & 0 \\
+    Cuba & 1,043 & 4 & 634 & 429.40 & 100 & 0.90 \\
     España & 452 & 4 & 366 & 118.10 & 91.80 & 0 \\
-    Chile & 342 & 3 & 120 & 203.90 & 100 & 0 \\
+    Chile & 371 & 3 & 120 & 208.80 & 100 & 2.20 \\
     Colombia & 288 & 1 & 288 & 115.60 & 100 & 0 \\
+    Perú & 174 & 2 & 116 & 139.50 & 100 & 0 \\
     Paraguay & 170 & 2 & 120 & 90.60 & 100 & 0 \\
     Ecuador & 153 & 1 & 153 & 181.10 & 100 & 0 \\
-    Perú & 116 & 1 & 116 & 143.80 & 100 & 0 \\
-    Argentina & 100 & 2 & 0 & 207.50 & 100 & 0 \\
+    Argentina & 150 & 3 & 0 & 165.60 & 100 & 0.70 \\
+    CA & 51 & 1 & 0 & 238.70 & 100 & 0 \\
     México & 40 & 1 & 40 & 541.60 & 100 & 0 \\
-    CA & 33 & 1 & 0 & 218.70 & 100 & 0 \\
     Nicaragua & 28 & 1 & 28 & 89.30 & 100 & 0 \\
     \bottomrule
     \end{tabular}
