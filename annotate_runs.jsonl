@@ -1,0 +1,1 @@
+{"timestamp": "2026-06-06T09:56:52.926509+00:00", "model": "claude-opus-4-8", "source": "trial", "prompts": 10, "validated": 10, "voted": 6, "calls": 1, "tokens_in": 7278, "tokens_out": 870, "tokens_total": 8148, "tokens_measured": false}
