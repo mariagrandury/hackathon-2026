@@ -138,6 +138,29 @@ python annotate_claude.py --report   # coverage, buckets, topics, agreement
 python annotate_claude.py --usage    # cumulative cost + extrapolation
 ```
 
+## Optional: analysis.md dimension pass (D1–D6)
+
+A second, independent annotation layer that classifies every prompt across the
+six dimensions defined in `guidelines/analysis.md` (D1 cultural dimension, D2
+thematic taxonomy, D3 register, D4 linguistic complexity, D5 multilingual level,
+and D6 cultural-anchoring exposed as `d6_anchoring`). These land as the
+`d1_dimension … d6_anchoring` columns and **merge into the existing row per `id`**
+(non-destructive — validation/vote/region/topic are preserved).
+
+1. `python annotate_claude.py --dump-dims --out /tmp/annotate_dims.json [--limit N]`
+   — every prompt with no `d1_dimension` yet. Each item keeps `system_prompt` and
+   `prompt` **separate** (the rubric labels the prompt but reads the system prompt
+   for role context).
+2. Read `guidelines/analysis.md` (the full rubric, in Spanish, with the decision
+   order and the tie-break tables) and classify each prompt. Emit per item
+   `{id, d1_dimension, d2_topic, d3_register, d4_complexity, d5_multilingual, d6_anchoring}`
+   with the **exact Spanish values** from the rubric (accents/case are
+   auto-normalized on write; unknown values are skipped, not fatal).
+3. Fan out the same way (chunks + Agent/Workflow) for the full set.
+4. `python annotate_claude.py --write /tmp/dims_results.json --source dims --calls N`.
+
+`--report` prints the per-dimension distributions once written.
+
 ## Notes
 
 - The `cultural_preferences_claude` repo is created automatically on first write.

@@ -166,6 +166,71 @@ class WriteAnnotations(unittest.TestCase):
         _, df = self._run(ac.empty_claude_df(), [{"id": 9, "validation_choice": "trivial"}])
         self.assertEqual(df["id"].dtype, "int64")
 
+    def test_dims_pass_is_non_destructive(self):
+        # A dims-only write must ADD the d* fields to the existing row, keep
+        # validation/vote/region/topic, and NOT create a second row for the id.
+        existing = pd.DataFrame(
+            [
+                {
+                    "id": 7, "validation_choice": "preference", "validation_reason": "keep",
+                    "vote_choice": "a", "vote_reason": "keep", "region": "Asturias",
+                    "cultural_topic": "values_and_opinions",
+                    "d1_dimension": "", "d2_topic": "", "d3_register": "",
+                    "d4_complexity": "", "d5_multilingual": "", "d6_anchoring": "",
+                    "model": "claude-opus-4-8", "labeled_at": "t0",
+                }
+            ],
+            columns=list(ac.CLAUDE_FEATURES),
+        )
+        _, df = self._run(
+            existing,
+            [{
+                "id": 7,
+                "d1_dimension": "Preferencia", "d2_topic": "Social - Contexto",
+                "d3_register": "Neutro", "d4_complexity": "Media",
+                "d5_multilingual": "Monolingüe", "d6_anchoring": "Alto",
+            }],
+        )
+        self.assertEqual(len(df[df["id"] == 7]), 1)  # exactly one row for the id
+        row = df[df["id"] == 7].iloc[0]
+        # prior fields preserved
+        self.assertEqual(row["validation_choice"], "preference")
+        self.assertEqual(row["vote_choice"], "a")
+        self.assertEqual(row["region"], "Asturias")
+        self.assertEqual(row["cultural_topic"], "values_and_opinions")
+        # new dims added
+        self.assertEqual(row["d1_dimension"], "Preferencia")
+        self.assertEqual(row["d2_topic"], "Social - Contexto")
+        self.assertEqual(row["d6_anchoring"], "Alto")
+
+
+class DimensionHelpers(unittest.TestCase):
+    def test_canon_dim_accent_case_tolerant(self):
+        # write_results normalizes raw agent output (dropped accents / wrong
+        # case) back to the rubric's canonical spelling before it's stored.
+        self.assertEqual(ac.canon_dim("d1_dimension", "dinamica"), "Dinámica")
+        self.assertEqual(ac.canon_dim("d5_multilingual", "MONOLINGUE"), "Monolingüe")
+        self.assertEqual(ac.canon_dim("d6_anchoring", "alto"), "Alto")
+
+    def test_canon_dim_unknown_returns_blank(self):
+        self.assertEqual(ac.canon_dim("d1_dimension", "totally-bogus"), "")
+
+    def test_all_dim_values_round_trip(self):
+        for field, values in ac.DIM_VALUES.items():
+            for v in values:
+                self.assertEqual(ac.canon_dim(field, v), v)
+
+    def test_pending_dims_all_when_empty(self):
+        prompts = pd.DataFrame([{"id": 1}, {"id": 2}, {"id": 3}])
+        self.assertEqual(ac.pending_dims_ids(prompts, ac.empty_claude_df()), [1, 2, 3])
+
+    def test_pending_dims_skips_done(self):
+        prompts = pd.DataFrame([{"id": 1}, {"id": 2}])
+        claude = pd.DataFrame(
+            [{"id": 1, "d1_dimension": "Conocimiento"}], columns=list(ac.CLAUDE_FEATURES)
+        )
+        self.assertEqual(ac.pending_dims_ids(prompts, claude), [2])
+
 
 class TaxonomyInvariants(unittest.TestCase):
     def test_topics_unique_and_have_other(self):

@@ -96,10 +96,44 @@ CLAUDE_FEATURES = Features(
         "vote_reason": Value("string"),
         "region": Value("string"),  # city/region/comarca mentioned, or ""
         "cultural_topic": Value("string"),  # one of CULTURAL_TOPICS, or ""
+        # The six analysis.md ("Eres un anotador lingüístico…") dimensions.
+        # Values stored verbatim in Spanish, as the rubric defines them. The
+        # file labels them D1–D5 and D8 (no D6/D7); D8 is exposed here as
+        # ``d6_anchoring`` so the columns read d1..d6.
+        "d1_dimension": Value("string"),  # Conocimiento/Preferencia/Dinámica/Trampa de sesgo/NONE
+        "d2_topic": Value("string"),  # Ideacional|Lingüística|Social - <subtype>
+        "d3_register": Value("string"),  # Formal/Neutro/Informal/Mixto
+        "d4_complexity": Value("string"),  # Baja/Media/Alta
+        "d5_multilingual": Value("string"),  # Monolingüe/Bilingüe/Multilingüe/Code-switching
+        "d6_anchoring": Value("string"),  # (D8 in analysis.md) Bajo/Medio/Alto
         "model": Value("string"),  # which Claude model produced the labels
         "labeled_at": Value("string"),  # ISO-8601 UTC timestamp
     }
 )
+
+# Allowed values for the analysis.md dimensions, verbatim from the rubric.
+# Field name -> ordered tuple of canonical Spanish values.
+DIM_VALUES: dict[str, tuple[str, ...]] = {
+    "d1_dimension": ("Conocimiento", "Preferencia", "Dinámica", "Trampa de sesgo", "NONE"),
+    "d2_topic": (
+        "Ideacional - Conceptos",
+        "Ideacional - Conocimiento",
+        "Ideacional - Valores",
+        "Ideacional - Normas y morales",
+        "Ideacional - Artefactos",
+        "Lingüística - Dialectos",
+        "Lingüística - Estilos/registros/géneros",
+        "Social - Relaciones",
+        "Social - Contexto",
+        "Social - Intención comunicativa",
+        "Social - Demografía",
+    ),
+    "d3_register": ("Formal", "Neutro", "Informal", "Mixto"),
+    "d4_complexity": ("Baja", "Media", "Alta"),
+    "d5_multilingual": ("Monolingüe", "Bilingüe", "Multilingüe", "Code-switching"),
+    "d6_anchoring": ("Bajo", "Medio", "Alto"),
+}
+DIM_FIELDS = tuple(DIM_VALUES)
 
 # Mirror of app.py's VOTE_CHOICES — duplicated (not imported) because neither
 # this module nor data.py may depend on the Gradio layer. Kept in sync by the
@@ -113,9 +147,38 @@ _EMPTY_CLAUDE_RECORD = {
     "vote_reason": "",
     "region": "",
     "cultural_topic": "",
+    "d1_dimension": "",
+    "d2_topic": "",
+    "d3_register": "",
+    "d4_complexity": "",
+    "d5_multilingual": "",
+    "d6_anchoring": "",
     "model": "",
     "labeled_at": "",
 }
+
+
+def _strip_accents(s: str) -> str:
+    import unicodedata
+
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
+    )
+
+
+# Accent/case-insensitive lookup -> canonical value, per dimension. Lets agent
+# output like "dinamica" / "monolingue" / "ALTO" map back to the rubric's exact
+# spelling without a hard failure on a dropped accent.
+_DIM_CANON: dict[str, dict[str, str]] = {
+    field: {_strip_accents(v).casefold(): v for v in values}
+    for field, values in DIM_VALUES.items()
+}
+
+
+def canon_dim(field: str, value: str) -> str:
+    """Return the canonical rubric value for ``value`` in ``field``, or "" if it
+    doesn't match any allowed value (accent/case-insensitive)."""
+    return _DIM_CANON.get(field, {}).get(_strip_accents((value or "").strip()).casefold(), "")
 
 # Validation buckets / vote choices / topics Claude is allowed to emit — used
 # to validate ``--write`` input before it touches the Hub.
@@ -173,6 +236,13 @@ def pending_vote_ids(prompts_df, claude_df) -> list[int]:
     votable = {int(i) for i in prompts_df.loc[has_ans, "id"]}
     done = _nonempty_ids(claude_df, "vote_choice")
     return sorted(votable - done)
+
+
+def pending_dims_ids(prompts_df, claude_df) -> list[int]:
+    """Prompt ids with no analysis.md dimension annotation yet (every prompt is
+    eligible; ``d1_dimension`` is the sentinel for 'dims done')."""
+    done = _nonempty_ids(claude_df, "d1_dimension")
+    return [int(i) for i in prompts_df["id"] if int(i) not in done]
 
 
 def write_claude_annotations(records: list[dict]) -> int:
@@ -282,6 +352,33 @@ def dump_pending(out_path: str, *, limit: int | None, tasks: str) -> int:
     return len(items)
 
 
+def dump_dims(out_path: str, *, limit: int | None) -> int:
+    """Work-list for the analysis.md dimension pass: every prompt with no
+    ``d1_dimension`` yet. Keeps ``system_prompt`` and ``prompt`` SEPARATE — the
+    rubric labels the prompt but uses the system prompt for role context."""
+    prompts_df = data.load_prompts_df()
+    claude_df = load_claude_df()
+    ids = pending_dims_ids(prompts_df, claude_df)
+    by_id = prompts_df.set_index("id", drop=False)
+    items: list[dict] = []
+    for pid in ids:
+        row = by_id.loc[pid]
+        items.append(
+            {
+                "id": int(pid),
+                "country": str(row.get("country", "") or ""),
+                "language": str(row.get("language", "") or ""),
+                "system_prompt": str(row.get("system_prompt", "") or ""),
+                "prompt": str(row.get("prompt", "") or ""),
+            }
+        )
+    if limit is not None:
+        items = items[:limit]
+    Path(out_path).write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"wrote {len(items)} prompt(s) needing analysis.md dimensions to {out_path}")
+    return len(items)
+
+
 def _log_run(record: dict) -> None:
     with RUNS_LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -322,6 +419,7 @@ def write_results(
 
     stamp = datetime.now(timezone.utc).isoformat()
     records: list[dict] = []
+    skipped_dims: list = []
     for i, r in enumerate(raw):
         if "id" not in r:
             raise SystemExit(f"record {i} is missing 'id'")
@@ -356,11 +454,23 @@ def write_results(
                     f"must be one of {sorted(CULTURAL_TOPIC_SET)}"
                 )
             rec["cultural_topic"] = topic
+        # analysis.md dimensions. Accent/case-tolerant; an unrecognized value is
+        # skipped (not fatal) and counted, so one bad cell never aborts a write.
+        for field in DIM_FIELDS:
+            raw = (r.get(field) or "").strip()
+            if not raw:
+                continue
+            canon = canon_dim(field, raw)
+            if canon:
+                rec[field] = canon
+            else:
+                skipped_dims.append((r["id"], field, raw))
         if not (
             "validation_choice" in rec
             or "vote_choice" in rec
             or "region" in rec
             or "cultural_topic" in rec
+            or any(f in rec for f in DIM_FIELDS)
         ):
             continue  # nothing to record for this id
         records.append(rec)
@@ -375,6 +485,7 @@ def write_results(
     # back to a payload-size estimate otherwise.
     n_validated = sum(1 for r in records if "validation_choice" in r)
     n_voted = sum(1 for r in records if "vote_choice" in r)
+    n_dims = sum(1 for r in records if "d1_dimension" in r)
     n_calls = calls if calls is not None else 1
     measured = tokens_in is not None or tokens_out is not None
     if measured:
@@ -389,6 +500,7 @@ def write_results(
             "prompts": len(records),
             "validated": n_validated,
             "voted": n_voted,
+            "dims": n_dims,
             "calls": n_calls,
             "tokens_in": tok_in,
             "tokens_out": tok_out,
@@ -398,6 +510,8 @@ def write_results(
     )
 
     print(f"upserted {len(records)} record(s); Claude dataset now holds {total} row(s)")
+    if skipped_dims:
+        print(f"  skipped {len(skipped_dims)} unrecognized dimension value(s), e.g. {skipped_dims[:5]}")
     print(
         f"  logged run: {len(records)} prompts, {n_calls} call(s), "
         f"{tok_in + tok_out:,} tokens ({'measured' if measured else 'estimated'}) "
@@ -415,8 +529,10 @@ def report() -> None:
     n_voted = len(_nonempty_ids(claude_df, "vote_choice"))
     n_region = len(_nonempty_ids(claude_df, "region"))
     n_topic = len(_nonempty_ids(claude_df, "cultural_topic"))
+    n_dims = len(_nonempty_ids(claude_df, "d1_dimension"))
     n_pending_val = len(pending_validation_ids(prompts_df, claude_df))
     n_pending_vote = len(pending_vote_ids(prompts_df, claude_df))
+    n_pending_dims = len(pending_dims_ids(prompts_df, claude_df))
 
     print("=== Claude annotation coverage ===")
     print(f"prompts total:            {n_prompts}")
@@ -424,6 +540,7 @@ def report() -> None:
     print(f"voted by Claude:          {n_voted}  (pending: {n_pending_vote})")
     print(f"region tagged:            {n_region}")
     print(f"cultural_topic tagged:    {n_topic}")
+    print(f"analysis.md dims tagged:  {n_dims}  (pending: {n_pending_dims})")
 
     def _dist(column: str) -> dict:
         if claude_df.empty or column not in claude_df.columns:
@@ -443,6 +560,13 @@ def report() -> None:
         print("\nClaude cultural topics:")
         for k, v in topic_dist.items():
             print(f"  {k:28s} {v:5d}")
+
+    for field in DIM_FIELDS:
+        d = _dist(field)
+        if d:
+            print(f"\n{field}:")
+            for k, v in d.items():
+                print(f"  {str(k):34s} {v:5d}")
 
     # Claude-vs-human agreement, where humans have caught up. Human validation
     # is a 3-slot consensus; only compare prompts whose three slots are ALL
@@ -507,6 +631,11 @@ def usage_summary() -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dump-pending", action="store_true", help="write the work-list")
+    ap.add_argument(
+        "--dump-dims",
+        action="store_true",
+        help="work-list for the analysis.md dimension pass (all un-dim'd prompts)",
+    )
     ap.add_argument("--write", metavar="RESULTS_JSON", help="upsert Claude's decisions")
     ap.add_argument("--report", action="store_true", help="coverage + agreement")
     ap.add_argument("--usage", action="store_true", help="summarise the run ledger")
@@ -528,6 +657,8 @@ def main() -> None:
 
     if args.dump_pending:
         dump_pending(args.out, limit=args.limit, tasks=args.tasks)
+    elif args.dump_dims:
+        dump_dims(args.out, limit=args.limit)
     elif args.write:
         write_results(
             args.write,
@@ -542,7 +673,7 @@ def main() -> None:
     elif args.usage:
         usage_summary()
     else:
-        ap.error("pick one of --dump-pending / --write / --report / --usage")
+        ap.error("pick one of --dump-pending / --dump-dims / --write / --report / --usage")
 
 
 if __name__ == "__main__":
